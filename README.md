@@ -36,13 +36,13 @@ GOOS=windows GOARCH=amd64 go build -o wordlisttool.exe .
 
 ```bash
 # Standard generation
-./wordlisttool -i keywords.txt -o wordlist.txt
+./wordlisttool -i keywords.txt -o wordlist.txt -v
 
 # Quick run (fewer chains, lower leet budget)
 ./wordlisttool -i keywords.txt -o wordlist.txt -preset short
 
 # Thorough run (all chains, high leet budget, 4-stage combos)
-./wordlisttool -i keywords.txt -o wordlist.txt -preset long
+./wordlisttool -i keywords.txt -o wordlist.txt -preset long -v
 
 # With progress, custom min length
 ./wordlisttool -i keywords.txt -o wordlist.txt -v -min-length 10
