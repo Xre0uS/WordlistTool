@@ -59,7 +59,7 @@ func (p *Pipeline) Run() error {
 
 	var totalGenerated int64
 	var totalWritten int64
-	minLen := p.cfg.MinLength
+	var totalDupes int64
 
 	// Workers: for each keyword, stream through transformers one at a time
 	var workerWg sync.WaitGroup
@@ -68,11 +68,11 @@ func (p *Pipeline) Run() error {
 		go func() {
 			defer workerWg.Done()
 			for keyword := range keywordCh {
-				transform.StreamAll(p.transformers, keyword, minLen, func(batch []string) {
+				transform.StreamAll(p.transformers, keyword, func(batch []string) {
 					n := int64(len(batch))
 					atomic.AddInt64(&totalGenerated, n)
 
-					if p.cfg.MaxCandidates > 0 && atomic.LoadInt64(&totalGenerated) >= p.cfg.MaxCandidates {
+					if p.cfg.MaxCandidates > 0 && atomic.LoadInt64(&totalWritten) >= p.cfg.MaxCandidates {
 						return
 					}
 
@@ -82,10 +82,10 @@ func (p *Pipeline) Run() error {
 		}()
 	}
 
-	// Writer goroutine
+	// Writer goroutine — applies min-length filter and bloom dedup
 	writerDone := make(chan error, 1)
 	go func() {
-		writerDone <- p.writeOutput(batchCh, &totalWritten)
+		writerDone <- p.writeOutput(batchCh, &totalWritten, &totalDupes)
 	}()
 
 	// Progress reporter
@@ -99,10 +99,11 @@ func (p *Pipeline) Run() error {
 				case <-ticker.C:
 					gen := atomic.LoadInt64(&totalGenerated)
 					wrt := atomic.LoadInt64(&totalWritten)
+					dup := atomic.LoadInt64(&totalDupes)
 					elapsed := time.Since(start).Seconds()
 					rate := float64(wrt) / elapsed
-					fmt.Fprintf(os.Stderr, "\r[*] Generated: %d | Written: %d | Rate: %.0f/s     ",
-						gen, wrt, rate)
+					fmt.Fprintf(os.Stderr, "\r[*] Generated: %d | Written: %d | Dupes: %d | Rate: %.0f/s     ",
+						gen, wrt, dup, rate)
 				case <-stopProgress:
 					return
 				}
@@ -133,6 +134,8 @@ func (p *Pipeline) Run() error {
 		fmt.Fprintln(os.Stderr)
 	}
 	fmt.Fprintf(os.Stderr, "[+] Complete in %s\n", elapsed.Round(time.Millisecond))
+	fmt.Fprintf(os.Stderr, "[+] Generated: %s | Dupes removed: %s\n",
+		commaFmt(atomic.LoadInt64(&totalGenerated)), commaFmt(atomic.LoadInt64(&totalDupes)))
 	fmt.Fprintf(os.Stderr, "[+] Candidates written: %s\n", commaFmt(atomic.LoadInt64(&totalWritten)))
 	if info, err := os.Stat(p.cfg.OutputFile); err == nil {
 		fmt.Fprintf(os.Stderr, "[+] Output: %s (%s)\n", p.cfg.OutputFile, humanSize(info.Size()))
@@ -143,7 +146,7 @@ func (p *Pipeline) Run() error {
 	return nil
 }
 
-func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64) error {
+func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, totalDupes *int64) error {
 	f, err := os.Create(p.cfg.OutputFile)
 	if err != nil {
 		return err
@@ -153,12 +156,34 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64) err
 	writer := bufio.NewWriterSize(f, 4*1024*1024) // 4MB buffer
 	defer writer.Flush()
 
+	minLen := p.cfg.MinLength
+
+	// Bloom filter for approximate dedup.
+	// Size for expected items with ~0.1% FPR, capped at 512MB.
+	var expectedItems int64 = 200_000_000 // reasonable default
+	if p.cfg.MaxCandidates > 0 && p.cfg.MaxCandidates < expectedItems {
+		expectedItems = p.cfg.MaxCandidates
+	}
+	bf := newBloom(expectedItems, 0.001, 512)
+	fmt.Fprintf(os.Stderr, "[*] Bloom filter: %d MB\n", bf.memoryMB())
+
 	for batch := range batches {
+		var written int64
+		var dupes int64
 		for _, candidate := range batch {
+			if minLen > 0 && len(candidate) < minLen {
+				continue
+			}
+			if bf.TestAndAdd(candidate) {
+				dupes++
+				continue
+			}
 			_, _ = writer.WriteString(candidate)
 			_ = writer.WriteByte('\n')
+			written++
 		}
-		atomic.AddInt64(totalWritten, int64(len(batch)))
+		atomic.AddInt64(totalWritten, written)
+		atomic.AddInt64(totalDupes, dupes)
 	}
 
 	return nil

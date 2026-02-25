@@ -31,35 +31,23 @@ func ApplyAll(transformers []Transformer, input string) []string {
 // StreamAll runs every transformer on the input and calls emit for each batch.
 // If a transformer implements the Streamer interface, its streaming method is used
 // to avoid materializing millions of results at once. Otherwise falls back to Transform.
+// No filtering is done here — min-length and dedup are applied at the write stage.
 // Returns the total number of candidates emitted.
-func StreamAll(transformers []Transformer, input string, minLen int, emit func([]string)) int64 {
+func StreamAll(transformers []Transformer, input string, emit func([]string)) int64 {
 	var total int64
-
-	filterAndEmit := func(results []string) {
-		if minLen > 0 {
-			n := 0
-			for _, v := range results {
-				if len(v) >= minLen {
-					results[n] = v
-					n++
-				}
-			}
-			results = results[:n]
-		}
-		if len(results) > 0 {
-			total += int64(len(results))
-			emit(results)
-		}
-	}
 
 	for _, t := range transformers {
 		if s, ok := t.(Streamer); ok {
-			// Use streaming path — emits in chunks, never materializes all at once
-			s.TransformStream(input, filterAndEmit)
+			s.TransformStream(input, func(batch []string) {
+				total += int64(len(batch))
+				emit(batch)
+			})
 		} else {
-			// Fallback: materialize and emit
 			results := t.Transform(input)
-			filterAndEmit(results)
+			if len(results) > 0 {
+				total += int64(len(results))
+				emit(results)
+			}
 		}
 	}
 
