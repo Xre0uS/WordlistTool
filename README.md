@@ -56,20 +56,26 @@ GOOS=windows GOARCH=amd64 go build -o wordlisttool.exe .
 
 ## Usage — Merge
 
-Concatenate multiple wordlists into a single file, preserving order. Shows total size and asks for confirmation before writing.
+Concatenate multiple wordlists into a single file, preserving order. Shows total size and asks for confirmation before writing. Output file must not already exist.
+
+Flags can appear anywhere — before, between, or after file arguments.
 
 ```bash
 # Merge 3 wordlists into one
+./wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
+
+# Flags before files also works
 ./wordlisttool merge -o combined.txt list1.txt list2.txt list3.txt
 
 # Skip confirmation prompt
-./wordlisttool merge -y -o combined.txt list1.txt list2.txt list3.txt
+./wordlisttool merge list1.txt list2.txt -o combined.txt -y
 ```
 
 Merge options:
 ```
 -o <file>   Output file (default: merged.txt)
 -y          Skip confirmation prompt
+-h          Show help
 ```
 
 ## Input Format

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"os"
 
@@ -33,39 +32,64 @@ func main() {
 // ---------------------------------------------------------------
 
 func runMerge(args []string) {
-	mergeFlags := flag.NewFlagSet("merge", flag.ExitOnError)
-	outputFile := mergeFlags.String("o", "merged.txt", "Output file")
-	noConfirm := mergeFlags.Bool("y", false, "Skip confirmation prompt")
+	outputFile := "merged.txt"
+	noConfirm := false
+	var inputFiles []string
 
-	mergeFlags.Usage = func() {
+	usage := func() {
 		fmt.Fprintf(os.Stderr, `Usage: wordlisttool merge [options] <file1> <file2> [file3 ...]
 
 Merge multiple wordlists into one file, preserving order.
 Lists are concatenated as-is: file1 first, then file2, etc.
 Shows total size and asks for confirmation before writing.
 
+Flags can appear anywhere — before, between, or after file arguments.
+
 Options:
   -o <file>   Output file (default: merged.txt)
   -y          Skip confirmation prompt
+  -h          Show this help
 
 Example:
-  wordlisttool merge -o combined.txt list1.txt list2.txt list3.txt
+  wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
 `)
 	}
 
-	mergeFlags.Parse(args)
+	// Manual parse so flags and files can be intermixed
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-o":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "[!] Error: -o requires a filename")
+				os.Exit(1)
+			}
+			i++
+			outputFile = args[i]
+		case "-y":
+			noConfirm = true
+		case "-h", "--help":
+			usage()
+			os.Exit(0)
+		default:
+			if len(args[i]) > 0 && args[i][0] == '-' {
+				fmt.Fprintf(os.Stderr, "[!] Error: unknown flag: %s\n", args[i])
+				usage()
+				os.Exit(1)
+			}
+			inputFiles = append(inputFiles, args[i])
+		}
+	}
 
-	inputFiles := mergeFlags.Args()
 	if len(inputFiles) < 2 {
 		fmt.Fprintln(os.Stderr, "[!] Error: merge requires at least 2 input files")
-		mergeFlags.Usage()
+		usage()
 		os.Exit(1)
 	}
 
 	cfg := &generator.MergeConfig{
 		InputFiles: inputFiles,
-		OutputFile: *outputFile,
-		NoConfirm:  *noConfirm,
+		OutputFile: outputFile,
+		NoConfirm:  noConfirm,
 	}
 
 	if err := generator.RunMerge(cfg); err != nil {

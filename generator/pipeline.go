@@ -133,8 +133,12 @@ func (p *Pipeline) Run() error {
 		fmt.Fprintln(os.Stderr)
 	}
 	fmt.Fprintf(os.Stderr, "[+] Complete in %s\n", elapsed.Round(time.Millisecond))
-	fmt.Fprintf(os.Stderr, "[+] Candidates written: %d\n", atomic.LoadInt64(&totalWritten))
-	fmt.Fprintf(os.Stderr, "[+] Output: %s\n", p.cfg.OutputFile)
+	fmt.Fprintf(os.Stderr, "[+] Candidates written: %s\n", commaFmt(atomic.LoadInt64(&totalWritten)))
+	if info, err := os.Stat(p.cfg.OutputFile); err == nil {
+		fmt.Fprintf(os.Stderr, "[+] Output: %s (%s)\n", p.cfg.OutputFile, humanSize(info.Size()))
+	} else {
+		fmt.Fprintf(os.Stderr, "[+] Output: %s\n", p.cfg.OutputFile)
+	}
 
 	return nil
 }
@@ -196,4 +200,23 @@ func trimSpace(s string) string {
 		end--
 	}
 	return s[start:end]
+}
+
+// commaFmt formats an int64 with comma separators (e.g. 1,234,567)
+func commaFmt(n int64) string {
+	if n < 0 {
+		return "-" + commaFmt(-n)
+	}
+	s := fmt.Sprintf("%d", n)
+	if len(s) <= 3 {
+		return s
+	}
+	var result []byte
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			result = append(result, ',')
+		}
+		result = append(result, byte(c))
+	}
+	return string(result)
 }

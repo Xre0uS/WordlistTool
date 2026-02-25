@@ -68,6 +68,11 @@ func RunMerge(cfg *MergeConfig) error {
 	// ── Merge ──
 	start := time.Now()
 
+	// Output must be a new file
+	if _, err := os.Stat(cfg.OutputFile); err == nil {
+		return fmt.Errorf("output file already exists: %s", cfg.OutputFile)
+	}
+
 	outFile, err := os.Create(cfg.OutputFile)
 	if err != nil {
 		return fmt.Errorf("creating output: %w", err)
