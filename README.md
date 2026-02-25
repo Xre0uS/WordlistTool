@@ -10,7 +10,8 @@ Advanced wordlist generator for hash cracking. Generates high-quality password c
 - **Mangling**: Reverse, duplicate, vowel strip, truncation, character doubling, stutter, char swaps
 - **Combination Chains**: Multi-stage transforms (e.g., case→leet→prepend→append) for deep candidates like `!G00gle@2026#`
 - **3-Tier Presets**: `short` (fast), `standard` (balanced), `long` (thorough)
-- **Min-Length Filter**: Discard candidates shorter than a threshold (default: 8) — no wasted output
+- **Min-Length Filter**: Discard candidates shorter than a threshold (default: 8) — applied after all transforms so short keywords can still produce long combos
+- **Bloom Filter Dedup**: Approximate duplicate removal at write time — low memory overhead (~342MB for 200M candidates)
 - **Merge Mode**: Concatenate multiple wordlists into one file, with size preview and confirmation
 - **Streaming Architecture**: Memory-efficient chunked output — runs comfortably on low-end systems
 - **Modular Architecture**: Each transform is a pluggable module implementing the `Transformer` interface
@@ -143,7 +144,8 @@ transform/
   combine.go     - Multi-stage chaining with chunked final-stage streaming
 
 generator/
-  pipeline.go    - Multithreaded fan-out pipeline with min-length filtering
+  pipeline.go    - Multithreaded fan-out pipeline with post-generation filtering
+  bloom.go       - Bloom filter for memory-efficient approximate deduplication
   merge.go       - Sequential wordlist merge with size preview
 
 wordlists/

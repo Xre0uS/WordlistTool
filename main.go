@@ -17,14 +17,58 @@ func main() {
                 Advanced Wordlist Generator
 `)
 
+	// ── Top-level help ──
+	if len(os.Args) <= 1 || os.Args[1] == "-h" || os.Args[1] == "--help" {
+		printUsage()
+		os.Exit(0)
+	}
+
 	// ── Subcommand dispatch ──
-	if len(os.Args) > 1 && os.Args[1] == "merge" {
+	if os.Args[1] == "merge" {
 		runMerge(os.Args[2:])
 		return
 	}
 
 	// Default: generate mode
 	runGenerate()
+}
+
+func printUsage() {
+	fmt.Fprintf(os.Stderr, `Usage:
+  wordlisttool [generate options]     Generate wordlist from keywords
+  wordlisttool merge [options] <files> Merge multiple wordlists into one
+
+━━━ Generate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  wordlisttool -i <keywords.txt> -o <output.txt> [options]
+
+  -i  <file>        Input keyword file (required)
+  -o  <file>        Output wordlist file (default: wordlist.txt)
+  -t  <n>           Worker threads (default: CPU count)
+  -preset <preset>  Generation preset: short, standard, long (default: standard)
+  -min-length <n>   Minimum candidate length (default: 8)
+  -max <n>          Maximum candidates, 0 = unlimited (default: 0)
+  -v                Show progress during generation
+
+  -no-case          Disable case transformations
+  -no-leet          Disable l33t speak transformations
+  -no-append        Disable append transformations
+  -no-prepend       Disable prepend transformations
+  -no-combine       Disable combination chains
+  -leet-max <n>     Max leet variants per word (0 = use preset default)
+
+━━━ Merge ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  wordlisttool merge <file1> <file2> [file3 ...] [options]
+
+  -o <file>         Output file (default: merged.txt)
+  -y                Skip confirmation prompt
+
+  Concatenates wordlists in order. Shows total size and word count.
+  Output file must not already exist.
+
+━━━ Examples ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  wordlisttool -i keywords.txt -o wordlist.txt -preset long -v
+  wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
+`)
 }
 
 // ---------------------------------------------------------------
@@ -344,6 +388,62 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 			MaxPerWord:      5_000_000,
 		})
 	}
+
+	// ── Case → Append(word+pattern) → Prepend(short) — long only ──
+	// Produces: 0SGEadmin!@#, 1SGEadmin!@#, !SGEpassword2026, etc.
+	if isLong || cfg.Preset == config.PresetStandard {
+		shortPrepends := []string{
+			"0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+			"!", "@", "#", "$", "*",
+		}
+		if isLong {
+			shortPrepends = append(shortPrepends,
+				"00", "01", "10", "11", "12", "13", "21", "23", "42", "69",
+				"!!", "@@", "##", "!@", "@!", "#!",
+				"123", "1234", "!@#", "!@#$",
+				"420", "666", "777", "000",
+			)
+		}
+		// Case → Append(word+sym) → Prepend(short digit/sym)
+		// Intermediates: 12 case × ~18K suffixes — need high cap to preserve variety
+		add(&transform.CombineTransformer{
+			Stages: []transform.Transformer{
+				&transform.CaseTransformer{},
+				&transform.AppendTransformer{Suffixes: buildWordPatternSuffixes()},
+				&transform.PrependTransformer{Prefixes: shortPrepends},
+			},
+			MaxIntermediate: capBudget(cfg, 0, 50_000, 200_000),
+			MaxPerWord:      capBudget(cfg, 0, 3_000_000, 8_000_000),
+		})
+
+		// Case → Append(sym+year) → Prepend(short digit/sym)
+		add(&transform.CombineTransformer{
+			Stages: []transform.Transformer{
+				&transform.CaseTransformer{},
+				&transform.AppendTransformer{Suffixes: buildSymbolYearSuffixes()},
+				&transform.PrependTransformer{Prefixes: shortPrepends},
+			},
+			MaxIntermediate: capBudget(cfg, 0, 50_000, 200_000),
+			MaxPerWord:      capBudget(cfg, 0, 3_000_000, 8_000_000),
+		})
+	}
+
+	// ── Leet → Append(sym+year) → Prepend(short) — long only ──
+	if isLong {
+		add(&transform.CombineTransformer{
+			Stages: []transform.Transformer{
+				&transform.LeetTransformer{MaxVariants: 200},
+				&transform.AppendTransformer{Suffixes: buildSymbolYearSuffixes()},
+				&transform.PrependTransformer{Prefixes: []string{
+					"0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+					"!", "@", "#", "$", "!!", "!@#",
+					"00", "12", "69", "123", "1234",
+				}},
+			},
+			MaxIntermediate: 200_000,
+			MaxPerWord:      5_000_000,
+		})
+	}
 }
 
 // ---------------------------------------------------------------
@@ -496,4 +596,44 @@ func buildDoubleAppendSuffixes() []string {
 	}
 	s = append(s, wordlists.CommonPatterns...)
 	return s
+}
+
+// buildWordPatternSuffixes builds word + symbol/number combo suffixes
+// e.g. "admin!@#", "password2026", "admin!@#0", "secure!", "admin123!"
+func buildWordPatternSuffixes() []string {
+	var s []string
+	syms := []string{"!", "@", "#", "$", "!!", "!@#", "!@#$", "!@#$%", "@!", "#!"}
+	nums := []string{"0", "1", "2", "12", "123", "1234", "2024", "2025", "2026", "2027"}
+
+	for _, w := range wordlists.CommonSuffixWords {
+		// word alone
+		s = append(s, w)
+		// word + symbol
+		for _, sym := range syms {
+			s = append(s, w+sym)
+		}
+		// word + number
+		for _, n := range nums {
+			s = append(s, w+n)
+		}
+		// word + symbol + number
+		for _, sym := range []string{"!", "@", "#"} {
+			for _, n := range []string{"0", "1", "2", "123", "2026", "2027"} {
+				s = append(s, w+sym+n)
+				s = append(s, w+n+sym)
+			}
+		}
+		// word + number + symbol combo
+		for _, p := range wordlists.CommonPatterns[:min(len(wordlists.CommonPatterns), 50)] {
+			s = append(s, w+p)
+		}
+	}
+	return s
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }

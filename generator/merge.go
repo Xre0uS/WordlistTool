@@ -3,7 +3,6 @@ package generator
 import (
 	"bufio"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"time"
@@ -83,6 +82,9 @@ func RunMerge(cfg *MergeConfig) error {
 	writer := bufio.NewWriterSize(outFile, 8*1024*1024)
 
 	var totalWritten int64
+	var totalLines int64
+	buf := make([]byte, 8*1024*1024) // 8MB read buffer
+
 	for i, f := range files {
 		fmt.Fprintf(os.Stderr, "\r[*] Writing %d/%d: %s ...          ", i+1, len(files), f.path)
 
@@ -91,13 +93,28 @@ func RunMerge(cfg *MergeConfig) error {
 			return fmt.Errorf("opening %s: %w", f.path, err)
 		}
 
-		reader := bufio.NewReaderSize(inFile, 8*1024*1024)
-		n, err := io.Copy(writer, reader)
-		inFile.Close()
-		if err != nil {
-			return fmt.Errorf("copying %s: %w", f.path, err)
+		for {
+			nr, readErr := inFile.Read(buf)
+			if nr > 0 {
+				chunk := buf[:nr]
+				// Count newlines
+				for _, b := range chunk {
+					if b == '\n' {
+						totalLines++
+					}
+				}
+				nw, writeErr := writer.Write(chunk)
+				totalWritten += int64(nw)
+				if writeErr != nil {
+					inFile.Close()
+					return fmt.Errorf("writing %s: %w", f.path, writeErr)
+				}
+			}
+			if readErr != nil {
+				break
+			}
 		}
-		totalWritten += n
+		inFile.Close()
 	}
 
 	if err := writer.Flush(); err != nil {
@@ -108,7 +125,7 @@ func RunMerge(cfg *MergeConfig) error {
 	rate := float64(totalWritten) / elapsed.Seconds() / (1024 * 1024)
 
 	fmt.Fprintf(os.Stderr, "\r[+] Complete in %s                                    \n", elapsed.Round(time.Millisecond))
-	fmt.Fprintf(os.Stderr, "[+] Written: %s (%.0f MB/s)\n", humanSize(totalWritten), rate)
+	fmt.Fprintf(os.Stderr, "[+] Words: %s | Size: %s (%.0f MB/s)\n", commaFmt(totalLines), humanSize(totalWritten), rate)
 	fmt.Fprintf(os.Stderr, "[+] Output: %s\n", cfg.OutputFile)
 
 	return nil

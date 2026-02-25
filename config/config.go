@@ -84,7 +84,8 @@ func Parse() (*Config, error) {
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, `Usage: wordlisttool -i <input> [options]
 
-Generates optimized wordlists for hash cracking from keywords.
+Generate optimized wordlists for hash cracking from keywords.
+Run 'wordlisttool -h' for full help including merge mode.
 
 Options:
   -i  <file>        Input keyword file (required)
