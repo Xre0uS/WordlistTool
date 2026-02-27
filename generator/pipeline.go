@@ -30,7 +30,7 @@ func NewPipeline(cfg *config.Config, transformers []transform.Transformer) *Pipe
 func (p *Pipeline) Run() error {
 	start := time.Now()
 
-	keywords, err := readKeywords(p.cfg.InputFile)
+	keywords, err := ReadKeywords(p.cfg.InputFile)
 	if err != nil {
 		return fmt.Errorf("reading input: %w", err)
 	}
@@ -189,7 +189,7 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, tot
 	return nil
 }
 
-func readKeywords(filename string) ([]string, error) {
+func ReadKeywords(filename string) ([]string, error) {
 	f, err := os.Open(filename)
 	if err != nil {
 		return nil, err

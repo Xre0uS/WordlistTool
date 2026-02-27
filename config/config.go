@@ -51,44 +51,45 @@ type Config struct {
 	Verbose       bool
 }
 
-// Parse parses command-line flags into a Config
-func Parse() (*Config, error) {
+// Parse parses the given args into a Config.
+// The keyword file is a positional argument and can appear anywhere among the flags.
+func Parse(args []string) (*Config, error) {
 	cfg := &Config{}
 
 	var presetStr string
 	var noCaseFlag, noLeetFlag, noAppendFlag, noPrependFlag, noCombineFlag bool
 
+	fs := flag.NewFlagSet("generate", flag.ContinueOnError)
+
 	// ── I/O ──
-	flag.StringVar(&cfg.InputFile, "i", "", "Input keyword file (one word per line)")
-	flag.StringVar(&cfg.OutputFile, "o", "wordlist.txt", "Output wordlist file")
-	flag.IntVar(&cfg.Threads, "t", runtime.NumCPU(), "Worker threads")
+	fs.StringVar(&cfg.OutputFile, "o", "wordlist.txt", "Output wordlist file")
+	fs.IntVar(&cfg.Threads, "t", runtime.NumCPU(), "Worker threads")
 
 	// ── Preset ──
-	flag.StringVar(&presetStr, "preset", "standard", "Generation preset: short, standard, long")
+	fs.StringVar(&presetStr, "preset", "standard", "Generation preset: short, standard, long")
 
 	// ── Filters ──
-	flag.IntVar(&cfg.MinLength, "min-length", 8, "Minimum candidate length (discard shorter)")
-	flag.Int64Var(&cfg.MaxCandidates, "max", 0, "Maximum candidates to generate (0 = unlimited)")
+	fs.IntVar(&cfg.MinLength, "min-length", 8, "Minimum candidate length (discard shorter)")
+	fs.Int64Var(&cfg.MaxCandidates, "max", 0, "Maximum candidates to generate (0 = unlimited)")
 
 	// ── Disable transforms ──
-	flag.BoolVar(&noCaseFlag, "no-case", false, "Disable case transformations")
-	flag.BoolVar(&noLeetFlag, "no-leet", false, "Disable l33t speak transformations")
-	flag.BoolVar(&noAppendFlag, "no-append", false, "Disable append transformations")
-	flag.BoolVar(&noPrependFlag, "no-prepend", false, "Disable prepend transformations")
-	flag.BoolVar(&noCombineFlag, "no-combine", false, "Disable combination chains")
+	fs.BoolVar(&noCaseFlag, "no-case", false, "Disable case transformations")
+	fs.BoolVar(&noLeetFlag, "no-leet", false, "Disable l33t speak transformations")
+	fs.BoolVar(&noAppendFlag, "no-append", false, "Disable append transformations")
+	fs.BoolVar(&noPrependFlag, "no-prepend", false, "Disable prepend transformations")
+	fs.BoolVar(&noCombineFlag, "no-combine", false, "Disable combination chains")
 
 	// ── Tuning ──
-	flag.IntVar(&cfg.LeetMax, "leet-max", 0, "Max leet variants per word (0 = use preset default)")
-	flag.BoolVar(&cfg.Verbose, "v", false, "Show progress during generation")
+	fs.IntVar(&cfg.LeetMax, "leet-max", 0, "Max leet variants per word (0 = use preset default)")
+	fs.BoolVar(&cfg.Verbose, "v", false, "Show progress during generation")
 
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, `Usage: wordlisttool -i <input> [options]
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, `Usage: wordlisttool generate <keywords.txt> [options]
 
 Generate optimized wordlists for hash cracking from keywords.
-Run 'wordlisttool -h' for full help including merge mode.
+Run 'wordlisttool -h' for full help including all modes.
 
 Options:
-  -i  <file>        Input keyword file (required)
   -o  <file>        Output wordlist file (default: wordlist.txt)
   -t  <n>           Worker threads (default: %d)
   -preset <preset>  Generation preset: short, standard, long (default: standard)
@@ -106,12 +107,42 @@ Options:
 `, runtime.NumCPU())
 	}
 
-	flag.Parse()
-
-	// ── Validate input ──
-	if cfg.InputFile == "" {
-		return nil, fmt.Errorf("input file is required (-i <file>)")
+	// ── Extract positional file from args, pass remaining to flag parser ──
+	// Flags that take a value: -o, -t, -preset, -min-length, -max, -leet-max
+	valueFlags := map[string]bool{
+		"-o": true, "-t": true, "-preset": true,
+		"-min-length": true, "-max": true, "-leet-max": true,
 	}
+	var flagArgs []string
+	var positional []string
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "-h" || a == "--help" {
+			fs.Usage()
+			os.Exit(0)
+		}
+		if len(a) > 0 && a[0] == '-' {
+			flagArgs = append(flagArgs, a)
+			if valueFlags[a] && i+1 < len(args) {
+				i++
+				flagArgs = append(flagArgs, args[i])
+			}
+		} else {
+			positional = append(positional, a)
+		}
+	}
+
+	if err := fs.Parse(flagArgs); err != nil {
+		return nil, err
+	}
+
+	// ── Input file is the positional argument ──
+	if len(positional) == 0 {
+		fs.Usage()
+		return nil, fmt.Errorf("input keyword file is required")
+	}
+	cfg.InputFile = positional[0]
+
 	if _, err := os.Stat(cfg.InputFile); os.IsNotExist(err) {
 		return nil, fmt.Errorf("input file does not exist: %s", cfg.InputFile)
 	}

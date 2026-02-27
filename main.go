@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/Xre0uS/wordlisttool/config"
 	"github.com/Xre0uS/wordlisttool/generator"
@@ -17,31 +18,40 @@ func main() {
                 Advanced Wordlist Generator
 `)
 
-	// ── Top-level help ──
 	if len(os.Args) <= 1 || os.Args[1] == "-h" || os.Args[1] == "--help" {
 		printUsage()
 		os.Exit(0)
 	}
 
-	// ── Subcommand dispatch ──
-	if os.Args[1] == "merge" {
+	switch os.Args[1] {
+	case "estimate":
+		runEstimate(os.Args[2:])
+	case "generate":
+		runGenerate(os.Args[2:])
+	case "merge":
 		runMerge(os.Args[2:])
-		return
+	default:
+		fmt.Fprintf(os.Stderr, "[!] Unknown command: %s\n\n", os.Args[1])
+		printUsage()
+		os.Exit(1)
 	}
-
-	// Default: generate mode
-	runGenerate()
 }
 
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage:
-  wordlisttool [generate options]     Generate wordlist from keywords
-  wordlisttool merge [options] <files> Merge multiple wordlists into one
+  wordlisttool estimate <keywords.txt>              Estimate output per preset (run first)
+  wordlisttool generate <keywords.txt> [options]    Generate wordlist from keywords
+  wordlisttool merge <files...> [options]            Merge multiple wordlists into one
+
+━━━ Estimate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  wordlisttool estimate <keywords.txt>
+
+  Dry-run: estimates candidate counts, output file size, and memory
+  usage for all three presets. Run this first to size your job.
 
 ━━━ Generate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  wordlisttool -i <keywords.txt> -o <output.txt> [options]
+  wordlisttool generate <keywords.txt> [options]
 
-  -i  <file>        Input keyword file (required)
   -o  <file>        Output wordlist file (default: wordlist.txt)
   -t  <n>           Worker threads (default: CPU count)
   -preset <preset>  Generation preset: short, standard, long (default: standard)
@@ -66,9 +76,84 @@ func printUsage() {
   Output file must not already exist.
 
 ━━━ Examples ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  wordlisttool -i keywords.txt -o wordlist.txt -preset long -v
+  wordlisttool estimate keywords.txt
+  wordlisttool generate keywords.txt -o wordlist.txt -preset long -v
   wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
 `)
+}
+
+// ---------------------------------------------------------------
+// estimate subcommand
+// ---------------------------------------------------------------
+
+func runEstimate(args []string) {
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
+		fmt.Fprintf(os.Stderr, `Usage: wordlisttool estimate <keywords.txt>
+
+Estimate candidate counts for all three presets without generating output.
+Useful for sizing a run before committing disk space and time.
+`)
+		os.Exit(0)
+	}
+
+	inputFile := args[0]
+	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
+		fmt.Fprintf(os.Stderr, "[!] Error: file not found: %s\n", inputFile)
+		os.Exit(1)
+	}
+
+	keywords, err := generator.ReadKeywords(inputFile)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[!] Error reading keywords: %v\n", err)
+		os.Exit(1)
+	}
+	if len(keywords) == 0 {
+		fmt.Fprintln(os.Stderr, "[!] Error: no keywords found in input file")
+		os.Exit(1)
+	}
+
+	fmt.Fprintf(os.Stderr, "[*] Loaded %d keywords: ", len(keywords))
+	for i, kw := range keywords {
+		if i > 0 {
+			fmt.Fprint(os.Stderr, ", ")
+		}
+		fmt.Fprint(os.Stderr, kw)
+	}
+	fmt.Fprintln(os.Stderr)
+
+	threads := runtime.NumCPU()
+	minLen := 8
+
+	presets := []struct {
+		name    string
+		preset  config.Preset
+		leetMax int
+	}{
+		{"short", config.PresetShort, 128},
+		{"standard", config.PresetStandard, 512},
+		{"long", config.PresetLong, 2048},
+	}
+
+	var results []generator.EstimateResult
+	for _, p := range presets {
+		fmt.Fprintf(os.Stderr, "[*] Estimating %s preset ...\n", p.name)
+
+		cfg := &config.Config{
+			Preset:        p.preset,
+			LeetMax:       p.leetMax,
+			MinLength:     minLen,
+			EnableCase:    true,
+			EnableLeet:    true,
+			EnableAppend:  true,
+			EnablePrepend: true,
+			EnableCombine: true,
+		}
+		transformers := buildTransformers(cfg)
+		result := generator.RunEstimate(keywords, transformers, p.name, threads, minLen)
+		results = append(results, result)
+	}
+
+	generator.PrintEstimateTable(results, keywords)
 }
 
 // ---------------------------------------------------------------
@@ -146,8 +231,8 @@ Example:
 // generate (default) subcommand
 // ---------------------------------------------------------------
 
-func runGenerate() {
-	cfg, err := config.Parse()
+func runGenerate(args []string) {
+	cfg, err := config.Parse(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[!] Error: %v\n", err)
 		os.Exit(1)

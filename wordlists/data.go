@@ -63,6 +63,7 @@ var CommonSuffixWords = []string{
 	"dev", "prod", "staging", "internal", "external",
 	"the", "my", "our", "is", "was",
 	"wifi", "laptop", "desktop", "mobile", "phone",
+	"wireless", "access",
 	// Tech
 	"tech", "cyber", "hack", "code", "linux", "windows", "mac",
 	"azure", "aws", "gcp", "docker", "kube", "k8s",
@@ -98,7 +99,7 @@ var CommonSuffixWords = []string{
 
 // CommonPrefixWords are words commonly prepended to passwords
 var CommonPrefixWords = []string{
-	"the", "my", "i", "we", "our", "a", "an",
+	"the", "my", "i", "we", "our", "a", "an", "iam",
 	"admin", "super", "mega", "ultra", "best", "top",
 	"team", "go", "love", "ilove", "ilov", "iloveu",
 	"mr", "ms", "mrs", "dr", "sir",
@@ -114,7 +115,9 @@ var CommonPrefixWords = []string{
 // Separators placed between keyword and appended/prepended content
 var Separators = []string{
 	"", "_", "-", ".", "@", "#", "!", " ",
-	"__", "--", "..", "@@", "##",
+	"__", "--", "..", "@@", "##", "!!", "&",
+	"&&", "*", "**", "%", "%%", "+", "++",
+	"?", "??",
 }
 
 // SeparatorsShort for combination stages

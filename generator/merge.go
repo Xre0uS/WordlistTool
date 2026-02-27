@@ -44,12 +44,17 @@ func RunMerge(cfg *MergeConfig) error {
 		totalBytes += info.Size()
 	}
 
-	// ── Display summary ──
+	// ── Display summary with percentage ranges ──
 	fmt.Fprintf(os.Stderr, "[*] Merge %d wordlists → %s\n\n", len(files), cfg.OutputFile)
+	var cumulative int64
 	for i, f := range files {
-		fmt.Fprintf(os.Stderr, "    %d. %-40s %s\n", i+1, f.path, humanSize(f.size))
+		pctStart := float64(cumulative) / float64(totalBytes) * 100
+		cumulative += f.size
+		pctEnd := float64(cumulative) / float64(totalBytes) * 100
+		fmt.Fprintf(os.Stderr, "    %d. %-35s %10s   %5.1f%% – %5.1f%%\n",
+			i+1, f.path, humanSize(f.size), pctStart, pctEnd)
 	}
-	fmt.Fprintln(os.Stderr, "    "+strings.Repeat("─", 55))
+	fmt.Fprintln(os.Stderr, "    "+strings.Repeat("─", 65))
 	fmt.Fprintf(os.Stderr, "    Total: %s\n\n", humanSize(totalBytes))
 
 	// ── Confirm ──
@@ -83,6 +88,7 @@ func RunMerge(cfg *MergeConfig) error {
 
 	var totalWritten int64
 	var totalLines int64
+	fileLinesCount := make([]int64, len(files))
 	buf := make([]byte, 8*1024*1024) // 8MB read buffer
 
 	for i, f := range files {
@@ -93,14 +99,14 @@ func RunMerge(cfg *MergeConfig) error {
 			return fmt.Errorf("opening %s: %w", f.path, err)
 		}
 
+		var fileLines int64
 		for {
 			nr, readErr := inFile.Read(buf)
 			if nr > 0 {
 				chunk := buf[:nr]
-				// Count newlines
 				for _, b := range chunk {
 					if b == '\n' {
-						totalLines++
+						fileLines++
 					}
 				}
 				nw, writeErr := writer.Write(chunk)
@@ -115,6 +121,8 @@ func RunMerge(cfg *MergeConfig) error {
 			}
 		}
 		inFile.Close()
+		fileLinesCount[i] = fileLines
+		totalLines += fileLines
 	}
 
 	if err := writer.Flush(); err != nil {
@@ -127,6 +135,18 @@ func RunMerge(cfg *MergeConfig) error {
 	fmt.Fprintf(os.Stderr, "\r[+] Complete in %s                                    \n", elapsed.Round(time.Millisecond))
 	fmt.Fprintf(os.Stderr, "[+] Words: %s | Size: %s (%.0f MB/s)\n", commaFmt(totalLines), humanSize(totalWritten), rate)
 	fmt.Fprintf(os.Stderr, "[+] Output: %s\n", cfg.OutputFile)
+
+	// ── Show per-file breakdown for hashcat progress estimation ──
+	fmt.Fprintln(os.Stderr, "")
+	fmt.Fprintln(os.Stderr, "[*] Breakdown (for estimating hashcat progress):")
+	var cumLines int64
+	for i, f := range files {
+		pctStart := float64(cumLines) / float64(totalLines) * 100
+		cumLines += fileLinesCount[i]
+		pctEnd := float64(cumLines) / float64(totalLines) * 100
+		fmt.Fprintf(os.Stderr, "    %d. %-35s %12s words   %5.1f%% – %5.1f%%\n",
+			i+1, f.path, commaFmt(fileLinesCount[i]), pctStart, pctEnd)
+	}
 
 	return nil
 }

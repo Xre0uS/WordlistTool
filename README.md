@@ -1,6 +1,6 @@
 # WordlistTool
 
-Advanced wordlist generator for hash cracking. Generates high-quality password candidates from keywords (company names, slogans, etc.) by applying modular, multi-stage transformations that go far beyond basic hashcat rules.
+Generates targeted wordlists for cracking organisation-specific passwords. Given a few keywords (company name, slogans, product names), it produces candidates that mirror the password patterns companies actually use — case variations, l33t speak, appended years/symbols, and deep multi-stage combinations. Not a replacement for broad wordlists and designed to be used **alongside hashcat rules** for maximum coverage.
 
 ## Features
 
@@ -33,40 +33,62 @@ GOOS=linux GOARCH=amd64 go build -o wordlisttool .
 GOOS=windows GOARCH=amd64 go build -o wordlisttool.exe .
 ```
 
+## Usage — Estimate
+
+Dry-run that estimates candidate counts, output file size, and bloom filter memory for all three presets. Run this first to size your job before committing disk space and time.
+
+```bash
+./wordlisttool estimate keywords.txt
+```
+
+Example output:
+```
+[*] Loaded 3 keywords: google, chrome, android
+[*] Estimating short preset ...
+[*] Estimating standard preset ...
+[*] Estimating long preset ...
+
+[*] Estimated output for 3 keyword(s):
+
+    Preset               Candidates    File Size    Bloom RAM    Est. Time
+    ──────────────────────────────────────────────────────────────────
+    short                72,631,798    910.57 MB        125 MB       9.8s
+    standard            113,413,138      1.42 GB        195 MB      14.8s
+    long                254,107,077      3.32 GB        436 MB      31.1s
+
+    Bloom RAM is the dedup filter used during generation.
+    Actual output may be slightly less after dedup.
+```
+
 ## Usage — Generate
 
 ```bash
 # Standard generation
-./wordlisttool -i keywords.txt -o wordlist.txt -v
+./wordlisttool generate keywords.txt -o wordlist.txt -v
 
 # Quick run (fewer chains, lower leet budget)
-./wordlisttool -i keywords.txt -o wordlist.txt -preset short
+./wordlisttool generate keywords.txt -o wordlist.txt -preset short
 
 # Thorough run (all chains, high leet budget, 4-stage combos)
-./wordlisttool -i keywords.txt -o wordlist.txt -preset long -v
+./wordlisttool generate keywords.txt -o wordlist.txt -preset long -v
 
 # With progress, custom min length
-./wordlisttool -i keywords.txt -o wordlist.txt -v -min-length 10
+./wordlisttool generate keywords.txt -o wordlist.txt -v -min-length 10
 
 # Disable specific transforms
-./wordlisttool -i keywords.txt -o wordlist.txt -no-leet -no-prepend
+./wordlisttool generate keywords.txt -o wordlist.txt -no-leet -no-prepend
 
 # Limit output
-./wordlisttool -i keywords.txt -o wordlist.txt -max 10000000
+./wordlisttool generate keywords.txt -o wordlist.txt -max 10000000
 ```
 
 ## Usage — Merge
 
-Concatenate multiple wordlists into a single file, preserving order. Shows total size and asks for confirmation before writing. Output file must not already exist.
-
-Flags can appear anywhere — before, between, or after file arguments.
+Concatenate multiple wordlists into a single file, preserving order. 
 
 ```bash
 # Merge 3 wordlists into one
 ./wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
-
-# Flags before files also works
-./wordlisttool merge -o combined.txt list1.txt list2.txt list3.txt
 
 # Skip confirmation prompt
 ./wordlisttool merge list1.txt list2.txt -o combined.txt -y
@@ -78,6 +100,7 @@ Merge options:
 -y          Skip confirmation prompt
 -h          Show help
 ```
+
 
 ## Input Format
 
@@ -91,7 +114,6 @@ android
 ## Generate Options
 
 ```
--i  <file>        Input keyword file (required)
 -o  <file>        Output wordlist file (default: wordlist.txt)
 -t  <n>           Worker threads (default: CPU count)
 -preset <preset>  Generation preset: short, standard, long (default: standard)
@@ -146,6 +168,7 @@ transform/
 generator/
   pipeline.go    - Multithreaded fan-out pipeline with post-generation filtering
   bloom.go       - Bloom filter for memory-efficient approximate deduplication
+  estimate.go    - Dry-run candidate count estimation across presets
   merge.go       - Sequential wordlist merge with size preview
 
 wordlists/
