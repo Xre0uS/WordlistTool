@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: ''
+          - goos: windows
+            goarch: amd64
+            suffix: '.exe'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -ldflags="-s -w" -o wordlisttool${{ matrix.suffix }} .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wordlisttool-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: wordlisttool${{ matrix.suffix }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          cp artifacts/wordlisttool-linux-amd64/wordlisttool release/wordlisttool
+          cp artifacts/wordlisttool-windows-amd64/wordlisttool.exe release/wordlisttool.exe
+          chmod +x release/wordlisttool
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: |
+            release/wordlisttool
+            release/wordlisttool.exe
+

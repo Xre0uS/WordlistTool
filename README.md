@@ -19,11 +19,17 @@ Generates targeted wordlists for cracking organisation-specific passwords. Given
 
 ## Installation
 
-Pre-built binaries:
-- `wordlisttool` — Linux x86_64
-- `wordlisttool.exe` — Windows x86_64
+### Pre-built binaries
 
-Build from source:
+Download the latest release from [GitHub Releases](https://github.com/Xre0uS/wordlisttool/releases):
+
+| Platform | File |
+|----------|------|
+| Linux x86_64 | `wordlisttool` |
+| Windows x86_64 | `wordlisttool.exe` |
+
+### Build from source
+
 ```bash
 # Native
 go build -o wordlisttool .
