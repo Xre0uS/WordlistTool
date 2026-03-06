@@ -1,46 +1,12 @@
 package transform
 
-// LeetTransformer generates l33t speak variations
+import (
+	"github.com/Xre0uS/wordlisttool/wordlists"
+)
+
+// LeetTransformer generates l33t speak variations with prioritised substitution.
 type LeetTransformer struct {
 	MaxVariants int // cap to prevent combinatorial explosion
-}
-
-// Standard leet substitution map: each character maps to possible replacements
-var leetMap = map[rune][]rune{
-	'a': {'@', '4'},
-	'A': {'@', '4'},
-	'b': {'8'},
-	'B': {'8'},
-	'c': {'('},
-	'C': {'('},
-	'd': {'|'},
-	'D': {'|'},
-	'e': {'3'},
-	'E': {'3'},
-	'g': {'9', '6'},
-	'G': {'9', '6'},
-	'h': {'#'},
-	'H': {'#'},
-	'i': {'1', '!'},
-	'I': {'1', '!'},
-	'l': {'1', '|'},
-	'L': {'1', '|'},
-	'n': {'~'},
-	'N': {'~'},
-	'o': {'0'},
-	'O': {'0'},
-	'r': {'2'},
-	'R': {'2'},
-	's': {'5', '$'},
-	'S': {'5', '$'},
-	't': {'7', '+'},
-	'T': {'7', '+'},
-	'u': {'v'},
-	'U': {'v'},
-	'x': {'%'},
-	'X': {'%'},
-	'z': {'2'},
-	'Z': {'2'},
 }
 
 func (l *LeetTransformer) Name() string { return "leet" }
@@ -66,13 +32,11 @@ func (l *LeetTransformer) Transform(input string) []string {
 		return true
 	}
 
-	// Include original
 	add(input)
 
-	// Find positions that have leet substitutions
 	var positions []leetPos
 	for i, r := range runes {
-		if subs, ok := leetMap[r]; ok {
+		if subs, ok := wordlists.LeetMap[r]; ok {
 			positions = append(positions, leetPos{index: i, subs: subs})
 		}
 	}
@@ -81,8 +45,7 @@ func (l *LeetTransformer) Transform(input string) []string {
 		return results
 	}
 
-	// Priority 1: Full leet variants (all positions substituted with each first sub)
-	// This generates the most "recognizable" leet like g00gle, p@$$w0rd
+	// Full leet: all positions substituted
 	for _, subIdx := range []int{0, 1} {
 		fullLeet := make([]rune, len(runes))
 		copy(fullLeet, runes)
@@ -98,7 +61,7 @@ func (l *LeetTransformer) Transform(input string) []string {
 		}
 	}
 
-	// Priority 2: Single-position substitutions
+	// Single-position substitutions
 	for _, p := range positions {
 		for _, sub := range p.subs {
 			variant := make([]rune, len(runes))
@@ -110,7 +73,7 @@ func (l *LeetTransformer) Transform(input string) []string {
 		}
 	}
 
-	// Priority 3: Two-position substitutions (every pair)
+	// Two-position substitutions
 	for i := 0; i < len(positions); i++ {
 		for j := i + 1; j < len(positions); j++ {
 			for _, sub1 := range positions[i].subs {
@@ -127,7 +90,7 @@ func (l *LeetTransformer) Transform(input string) []string {
 		}
 	}
 
-	// Priority 4: Full combinatorial exploration for remaining budget
+	// Full combinatorial exploration for remaining budget
 	l.generateCombinations(runes, positions, 0, make([]rune, len(runes)), seen, &results, maxVariants)
 
 	return results

@@ -12,13 +12,13 @@ import (
 	"github.com/Xre0uS/wordlisttool/transform"
 )
 
-// Pipeline orchestrates multithreaded wordlist generation
+// Pipeline orchestrates multithreaded wordlist generation.
 type Pipeline struct {
 	cfg          *config.Config
 	transformers []transform.Transformer
 }
 
-// NewPipeline creates a new generation pipeline
+// NewPipeline creates a generation pipeline with the given config and transformers.
 func NewPipeline(cfg *config.Config, transformers []transform.Transformer) *Pipeline {
 	return &Pipeline{
 		cfg:          cfg,
@@ -26,7 +26,6 @@ func NewPipeline(cfg *config.Config, transformers []transform.Transformer) *Pipe
 	}
 }
 
-// Run executes the pipeline: read keywords -> fan out transforms -> stream write
 func (p *Pipeline) Run() error {
 	start := time.Now()
 
@@ -61,7 +60,6 @@ func (p *Pipeline) Run() error {
 	var totalWritten int64
 	var totalDupes int64
 
-	// Workers: for each keyword, stream through transformers one at a time
 	var workerWg sync.WaitGroup
 	for i := 0; i < p.cfg.Threads; i++ {
 		workerWg.Add(1)
@@ -82,13 +80,11 @@ func (p *Pipeline) Run() error {
 		}()
 	}
 
-	// Writer goroutine — applies min-length filter and bloom dedup
 	writerDone := make(chan error, 1)
 	go func() {
 		writerDone <- p.writeOutput(batchCh, &totalWritten, &totalDupes)
 	}()
 
-	// Progress reporter
 	stopProgress := make(chan struct{})
 	if p.cfg.Verbose {
 		go func() {
@@ -111,7 +107,6 @@ func (p *Pipeline) Run() error {
 		}()
 	}
 
-	// Feed keywords
 	for _, kw := range keywords {
 		keywordCh <- kw
 		if p.cfg.MaxCandidates > 0 && atomic.LoadInt64(&totalGenerated) >= p.cfg.MaxCandidates {
@@ -153,14 +148,12 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, tot
 	}
 	defer f.Close()
 
-	writer := bufio.NewWriterSize(f, 4*1024*1024) // 4MB buffer
+	writer := bufio.NewWriterSize(f, 4*1024*1024)
 	defer writer.Flush()
 
 	minLen := p.cfg.MinLength
 
-	// Bloom filter for approximate dedup.
-	// Size for expected items with ~0.1% FPR, capped at 512MB.
-	var expectedItems int64 = 200_000_000 // reasonable default
+	var expectedItems int64 = 200_000_000
 	if p.cfg.MaxCandidates > 0 && p.cfg.MaxCandidates < expectedItems {
 		expectedItems = p.cfg.MaxCandidates
 	}
@@ -227,7 +220,6 @@ func trimSpace(s string) string {
 	return s[start:end]
 }
 
-// commaFmt formats an int64 with comma separators (e.g. 1,234,567)
 func commaFmt(n int64) string {
 	if n < 0 {
 		return "-" + commaFmt(-n)

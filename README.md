@@ -5,23 +5,23 @@ Generates targeted wordlists for cracking organisation-specific passwords. Given
 ## Features
 
 - **Case Transformations**: lower, upper, title, inverted, toggle, alternating, per-position capitalization
-- **L33t Speak**: Multi-level substitutions (a→@/4, e→3, o→0, s→5/$, t→7/+, c→(, h→#, r→2, etc.) with smart prioritization
-- **Append/Prepend**: Symbols, all digits (0-9999), years (1950-2050), keyboard walks, number sequences, common words, separator combos
+- **L33t Speak**: Multi-level substitutions with smart prioritization
+- **Append/Prepend**: Symbols, digits (0-9999), years, keyboard walks, number sequences, common words
 - **Mangling**: Reverse, duplicate, vowel strip, truncation, character doubling, stutter, char swaps
-- **Combination Chains**: Multi-stage transforms (e.g., case→leet→prepend→append) for deep candidates like `!G00gle@2026#`
+- **Combination Chains**: Multi-stage transforms for deep candidates like `!@cm3Corp@2026#`
 - **3-Tier Presets**: `short` (fast), `standard` (balanced), `long` (thorough)
-- **Min-Length Filter**: Discard candidates shorter than a threshold (default: 8) — applied after all transforms so short keywords can still produce long combos
-- **Bloom Filter Dedup**: Approximate duplicate removal at write time — low memory overhead (~342MB for 200M candidates)
-- **Merge Mode**: Concatenate multiple wordlists into one file, with size preview and confirmation
-- **Streaming Architecture**: Memory-efficient chunked output — runs comfortably on low-end systems
-- **Modular Architecture**: Each transform is a pluggable module implementing the `Transformer` interface
+- **Min-Length Filter**: Discard candidates shorter than a threshold (default: 8)
+- **Bloom Filter Dedup**: Approximate duplicate removal at write time
+- **Configurable Data**: All symbols, words, leet map, years, etc. defined in `config.toml`
+- **Merge Mode**: Concatenate multiple wordlists into one file
+- **Streaming Architecture**: Memory-efficient chunked output
 - **Multithreaded**: Fan-out worker pool with configurable thread count
 
 ## Installation
 
 ### Pre-built binaries
 
-Download the latest release from [GitHub Releases](https://github.com/Xre0uS/wordlisttool/releases):
+Download from [GitHub Releases](https://github.com/Xre0uS/wordlisttool/releases):
 
 | Platform | File |
 |----------|------|
@@ -31,112 +31,60 @@ Download the latest release from [GitHub Releases](https://github.com/Xre0uS/wor
 ### Build from source
 
 ```bash
-# Native
 go build -o wordlisttool .
-
-# Cross-compile
-GOOS=linux GOARCH=amd64 go build -o wordlisttool .
-GOOS=windows GOARCH=amd64 go build -o wordlisttool.exe .
 ```
 
-## Usage — Estimate
+## Configuration
 
-Dry-run that estimates candidate counts, output file size, and bloom filter memory for all three presets. Run this first to size your job before committing disk space and time.
+All generation data (symbols, words, leet substitutions, year ranges, keyboard walks, etc.) is defined in `config.toml`. The file must be present — either in the current directory or specified with `-config`.
+
+```bash
+# Uses ./config.toml by default
+./wordlisttool generate keywords.txt -o wordlist.txt -v
+
+# Use a custom config
+./wordlisttool generate keywords.txt -config custom.toml
+```
+
+See `config.toml` for all available keys and their descriptions.
+
+## Usage — Estimate
 
 ```bash
 ./wordlisttool estimate keywords.txt
 ```
 
-Example output:
-```
-[*] Loaded 3 keywords: google, chrome, android
-[*] Estimating short preset ...
-[*] Estimating standard preset ...
-[*] Estimating long preset ...
-
-[*] Estimated output for 3 keyword(s):
-
-    Preset               Candidates    File Size    Bloom RAM    Est. Time
-    ──────────────────────────────────────────────────────────────────
-    short                72,631,798    910.57 MB        125 MB       9.8s
-    standard            113,413,138      1.42 GB        195 MB      14.8s
-    long                254,107,077      3.32 GB        436 MB      31.1s
-
-    Bloom RAM is the dedup filter used during generation.
-    Actual output may be slightly less after dedup.
-```
-
 ## Usage — Generate
 
 ```bash
-# Standard generation
 ./wordlisttool generate keywords.txt -o wordlist.txt -v
-
-# Quick run (fewer chains, lower leet budget)
 ./wordlisttool generate keywords.txt -o wordlist.txt -preset short
-
-# Thorough run (all chains, high leet budget, 4-stage combos)
 ./wordlisttool generate keywords.txt -o wordlist.txt -preset long -v
-
-# With progress, custom min length
 ./wordlisttool generate keywords.txt -o wordlist.txt -v -min-length 10
-
-# Disable specific transforms
 ./wordlisttool generate keywords.txt -o wordlist.txt -no-leet -no-prepend
-
-# Limit output
 ./wordlisttool generate keywords.txt -o wordlist.txt -max 10000000
 ```
 
-## Usage — Merge
-
-Concatenate multiple wordlists into a single file, preserving order. 
-
-```bash
-# Merge 3 wordlists into one
-./wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
-
-# Skip confirmation prompt
-./wordlisttool merge list1.txt list2.txt -o combined.txt -y
-```
-
-Merge options:
-```
--o <file>   Output file (default: merged.txt)
--y          Skip confirmation prompt
--h          Show help
-```
-
-
-## Input Format
-
-One keyword per line:
-```
-google
-chrome
-android
-```
-
-## Generate Options
+### Options
 
 ```
--o  <file>        Output wordlist file (default: wordlist.txt)
+-o  <file>        Output file (default: wordlist.txt)
 -t  <n>           Worker threads (default: CPU count)
--preset <preset>  Generation preset: short, standard, long (default: standard)
+-preset <preset>  Preset: short, standard, long (default: standard)
 -min-length <n>   Minimum candidate length (default: 8)
--max <n>          Maximum candidates, 0 = unlimited (default: 0)
--v                Show progress during generation
+-max <n>          Max candidates, 0 = unlimited (default: 0)
+-config <file>    Data config TOML (default: config.toml)
+-v                Show progress
 
--no-case          Disable case transformations
--no-leet          Disable l33t speak transformations
--no-append        Disable append transformations
--no-prepend       Disable prepend transformations
+-no-case          Disable case transforms
+-no-leet          Disable l33t speak
+-no-append        Disable append
+-no-prepend       Disable prepend
 -no-combine       Disable combination chains
-
--leet-max <n>     Max leet variants per word (0 = use preset default)
+-leet-max <n>     Max leet variants per word (0 = preset default)
 ```
 
-## Presets
+### Presets
 
 | Preset | Leet Budget | Description |
 |--------|-------------|-------------|
@@ -144,45 +92,61 @@ android
 | `standard` | 512 | Balanced — default |
 | `long` | 2048 | High leet budget, 4-stage combos — thorough |
 
+## Usage — Merge
+
+```bash
+./wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
+./wordlisttool merge list1.txt list2.txt -o combined.txt -y
+```
+
+## Input Format
+
+One keyword per line:
+```
+acmecorp
+phoenix
+atlas
+```
+
 ## Example Output
 
-From keyword `google`:
+From keyword `acmecorp`:
 ```
-google, Google, GOOGLE, gOOGLE, gOoGlE, ...
-g00gle, g009le, g0o9l3, ...
-Google2026, google!@#, GOOGLE123, ...
-G00gle@2026!, 123Google#, !g00gle2026, ...
-elgoog, ggl, ggooooggllee, ggoogle, ...
-googleadmin1, Google_2026, ...
-!G00gle@2026#, 123!#gOOGLE, ...
+acmecorp, Acmecorp, ACMECORP, aCMECORP, AcMeCoRp, ...
+@cm3corp, @cm3c0rp, 4(m3(02p, ...
+Acmecorp2026, acmecorp!@#, ACMECORP123, ...
+@cm3corp@2026!, 123Acmecorp#, !@cm3corp2026, ...
+procemca, cmcrp, aaccmmeeccoorrpp, aacmecorp, ...
+acmecorpadmin1, Acmecorp_2026, ...
+!@cm3Corp@2026#, 123!#aCMECORP, ...
 ```
 
 ## Architecture
 
 ```
-main.go          - Subcommand dispatch (generate / merge), chain configuration
-
-transform/
-  types.go       - Transformer interface, StreamAll (chunked streaming)
-  case.go        - Case transformations (12+ variants per word)
-  leet.go        - L33t speak substitutions (prioritized full/partial/combo)
-  append.go      - Suffix appending (symbols, numbers, years, words, patterns)
-  prepend.go     - Prefix prepending (symbols, numbers, years, words, patterns)
-  mangle.go      - String mangling (reverse, duplicate, truncate, vowel-strip)
-  combine.go     - Multi-stage chaining with chunked final-stage streaming
-
-generator/
-  pipeline.go    - Multithreaded fan-out pipeline with post-generation filtering
-  bloom.go       - Bloom filter for memory-efficient approximate deduplication
-  estimate.go    - Dry-run candidate count estimation across presets
-  merge.go       - Sequential wordlist merge with size preview
-
-wordlists/
-  data.go        - Embedded data: symbols, digits 0-9999, years, keyboard walks,
-                   number sequences, common words, pattern combinations
+main.go            Subcommand dispatch, chain configuration
+config.toml        Data config: symbols, words, leet map, years, patterns
 
 config/
-  config.go      - CLI flag parsing, preset system, configuration
+  config.go        CLI flag parsing, preset system
+
+transform/
+  types.go         Transformer interface, StreamAll
+  case.go          Case transformations
+  leet.go          L33t speak substitutions
+  append.go        Suffix appending
+  prepend.go       Prefix prepending
+  mangle.go        String mangling
+  combine.go       Multi-stage chaining
+
+generator/
+  pipeline.go      Multithreaded fan-out pipeline
+  bloom.go         Bloom filter for deduplication
+  estimate.go      Dry-run candidate count estimation
+  merge.go         Sequential wordlist merge
+
+wordlists/
+  data.go          TOML loader, exported variables
 ```
 
 ## Adding Custom Transforms

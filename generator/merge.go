@@ -8,22 +8,17 @@ import (
 	"time"
 )
 
-// MergeConfig holds configuration for the merge operation
 type MergeConfig struct {
 	InputFiles []string
 	OutputFile string
 	NoConfirm  bool
 }
 
-// RunMerge concatenates multiple wordlists into one output file in order.
-// It stats all files first to show total size, asks for confirmation, then
-// streams them sequentially with a large buffer for maximum throughput.
 func RunMerge(cfg *MergeConfig) error {
 	if len(cfg.InputFiles) == 0 {
 		return fmt.Errorf("no input files specified")
 	}
 
-	// ── Stat all files and calculate total size ──
 	type fileInfo struct {
 		path string
 		size int64
@@ -44,7 +39,6 @@ func RunMerge(cfg *MergeConfig) error {
 		totalBytes += info.Size()
 	}
 
-	// ── Display summary with percentage ranges ──
 	fmt.Fprintf(os.Stderr, "[*] Merge %d wordlists → %s\n\n", len(files), cfg.OutputFile)
 	var cumulative int64
 	for i, f := range files {
@@ -57,7 +51,6 @@ func RunMerge(cfg *MergeConfig) error {
 	fmt.Fprintln(os.Stderr, "    "+strings.Repeat("─", 65))
 	fmt.Fprintf(os.Stderr, "    Total: %s\n\n", humanSize(totalBytes))
 
-	// ── Confirm ──
 	if !cfg.NoConfirm {
 		fmt.Fprint(os.Stderr, "[?] Proceed? (y/N): ")
 		var answer string
@@ -69,10 +62,8 @@ func RunMerge(cfg *MergeConfig) error {
 		}
 	}
 
-	// ── Merge ──
 	start := time.Now()
 
-	// Output must be a new file
 	if _, err := os.Stat(cfg.OutputFile); err == nil {
 		return fmt.Errorf("output file already exists: %s", cfg.OutputFile)
 	}
@@ -83,13 +74,13 @@ func RunMerge(cfg *MergeConfig) error {
 	}
 	defer outFile.Close()
 
-	// 8MB write buffer for throughput
+	// 8MB buffers for throughput
 	writer := bufio.NewWriterSize(outFile, 8*1024*1024)
 
 	var totalWritten int64
 	var totalLines int64
 	fileLinesCount := make([]int64, len(files))
-	buf := make([]byte, 8*1024*1024) // 8MB read buffer
+	buf := make([]byte, 8*1024*1024)
 
 	for i, f := range files {
 		fmt.Fprintf(os.Stderr, "\r[*] Writing %d/%d: %s ...          ", i+1, len(files), f.path)
@@ -136,9 +127,8 @@ func RunMerge(cfg *MergeConfig) error {
 	fmt.Fprintf(os.Stderr, "[+] Words: %s | Size: %s (%.0f MB/s)\n", commaFmt(totalLines), humanSize(totalWritten), rate)
 	fmt.Fprintf(os.Stderr, "[+] Output: %s\n", cfg.OutputFile)
 
-	// ── Show per-file breakdown for hashcat progress estimation ──
 	fmt.Fprintln(os.Stderr, "")
-	fmt.Fprintln(os.Stderr, "[*] Breakdown (for estimating hashcat progress):")
+	fmt.Fprintln(os.Stderr, "[*] Breakdown:")
 	var cumLines int64
 	for i, f := range files {
 		pctStart := float64(cumLines) / float64(totalLines) * 100
@@ -151,7 +141,6 @@ func RunMerge(cfg *MergeConfig) error {
 	return nil
 }
 
-// humanSize formats bytes into a human-readable string
 func humanSize(bytes int64) string {
 	const (
 		KB = 1024

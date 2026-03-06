@@ -11,7 +11,6 @@ import (
 	"github.com/Xre0uS/wordlisttool/transform"
 )
 
-// EstimateResult holds the estimated output for one preset.
 type EstimateResult struct {
 	Preset     string
 	Count      int64
@@ -19,8 +18,6 @@ type EstimateResult struct {
 	Duration   time.Duration
 }
 
-// RunEstimate runs all transformers against each keyword, counting output
-// without writing anything. Used for dry-run estimation.
 func RunEstimate(keywords []string, transformers []transform.Transformer, presetName string, threads int, minLen int) EstimateResult {
 	start := time.Now()
 	var total int64
@@ -64,8 +61,6 @@ func RunEstimate(keywords []string, transformers []transform.Transformer, preset
 	}
 }
 
-// estimateBloomMB computes the bloom filter memory for a given candidate count.
-// Mirrors the logic in newBloom() with 0.001 FPR and 512MB cap.
 func estimateBloomMB(candidates int64) int {
 	if candidates <= 0 {
 		candidates = 1_000_000
@@ -81,7 +76,6 @@ func estimateBloomMB(candidates int64) int {
 	return mb
 }
 
-// PrintEstimateTable prints a comparison table of estimate results.
 func PrintEstimateTable(results []EstimateResult, keywords []string) {
 	fmt.Fprintf(os.Stderr, "\n[*] Estimated output for %d keyword(s):\n\n", len(keywords))
 	fmt.Fprintf(os.Stderr, "    %-12s %18s %12s %12s %12s\n",

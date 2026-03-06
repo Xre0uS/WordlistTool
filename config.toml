@@ -1,0 +1,236 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# WordlistTool — config.toml
+# ─────────────────────────────────────────────────────────────────────────────
+# Controls the built-in data used during candidate generation.
+# Pass to the tool with:  wordlisttool generate keywords.txt -config config.toml
+# Or place next to the binary and it will be loaded automatically.
+
+# ── Symbols ──────────────────────────────────────────────────────────────────
+# Used in various combinations when appending/prepending to keywords.
+
+# All symbols — broad set used for standalone references
+symbols = [
+  "!", "@", "#", "$", "%", "^", "&", "*",
+  "~", "`", "+", "=", "?", "/", "\\", "|",
+  "(", ")", "[", "]", "{", "}", "<", ">",
+  ".", ",", ";", ":", "'", '"',
+  "!!", "@@", "##", "$$", "%%", "**",
+  "!@", "@!", "#!", "!#", "$!", "!$",
+  "!@#", "#@!", "!@#$", "$#@!", "!@#$%",
+  "!@#$%^", "!@#$%^&", "!@#$%^&*",
+  "*!", "!*", "@#", "#$", "$%", "%^", "^&", "&*",
+  "!1", "!2", "@1", "@2", "#1", "#2",
+  "!!", "!?", "?!", "!@!", "@!@", "#!#",
+  "!#$", "$#!", "!$!", "$!$",
+  "...", "---", "___", "***", "###",
+]
+
+# Compact symbol set — used in cross-product combinations to limit explosion
+symbols_compact = [
+  "!", "@", "#", "$", "*", "%", "^", "&",
+  "!!", "!@#", "!@", "@!", "#!",
+]
+
+# Extended symbol set — used for direct single append/prepend
+symbols_extended = [
+  "!", "@", "#", "$", "%", "^", "&", "*", "~",
+  "!!", "@@", "##", "$$", "**",
+  "!@", "@!", "#!", "!#", "$!",
+  "!@#", "#@!", "!@#$", "$#@!",
+  "!@#$%", "!@#$%^", "!@#$%^&", "!@#$%^&*",
+  "!1", "@2", "#3", "$4", "%5",
+  "!?", "?!", "...", "---", "___",
+  "!!!", "@@@", "###", "$$$",
+]
+
+# ── Words ────────────────────────────────────────────────────────────────────
+# Common words appended/prepended to keywords during generation.
+
+# Words commonly appended after keywords (e.g. acmecorp_admin, acmecorp2026admin)
+suffix_words = [
+  # Generic
+  "admin", "password", "pass", "passwd", "secure", "security",
+  "corp", "inc", "ltd", "llc", "org", "com", "net", "io",
+  "login", "welcome", "access", "master", "root", "user",
+  "test", "temp", "backup", "sys", "system", "network",
+  "web", "app", "server", "db", "data", "cloud",
+  "dev", "prod", "staging", "internal", "external",
+  "the", "my", "our", "is", "was",
+  "wifi", "laptop", "desktop", "mobile", "phone", "wireless",
+  # Tech
+  "tech", "cyber", "hack", "code", "linux", "windows", "mac",
+  "azure", "aws", "gcp", "docker", "kube", "k8s",
+  "api", "ssh", "vpn", "dns", "ssl", "tls", "http", "https",
+  "git", "repo", "deploy", "build", "release", "debug",
+  "proxy", "firewall", "gateway", "router", "switch",
+  "node", "cluster", "host", "vm", "container",
+  "sql", "mongo", "redis", "postgres", "mysql", "oracle",
+  "token", "key", "secret", "cert", "auth", "oauth",
+  "encrypt", "decrypt", "hash", "salt", "crypt",
+  # Departments / roles
+  "it", "hr", "eng", "ops", "devops", "sre", "infra",
+  "cto", "ceo", "cfo", "ciso", "soc",
+  "finance", "sales", "marketing", "support", "helpdesk",
+  # Seasons / months
+  "spring", "summer", "fall", "autumn", "winter",
+  "jan", "feb", "mar", "apr", "may", "jun",
+  "jul", "aug", "sep", "oct", "nov", "dec",
+  "january", "february", "march", "april", "june",
+  "july", "august", "september", "october", "november", "december",
+  # Common password fragments
+  "love", "life", "rock", "star", "king", "queen",
+  "dragon", "monkey", "tiger", "lion", "bear", "wolf", "eagle",
+  "fire", "ice", "thunder", "storm", "shadow", "dark", "light",
+  "ninja", "pirate", "hero", "legend", "power", "force",
+  "magic", "wizard", "angel", "demon", "god", "devil",
+  "gold", "silver", "diamond", "platinum", "ruby",
+  "one", "two", "three", "four", "five",
+  "red", "blue", "green", "black", "white",
+  "pro", "max", "ultra", "plus", "prime", "elite",
+  "x", "xx", "xxx", "xo", "xoxo",
+]
+
+# Words commonly prepended before keywords (e.g. theAcmecorp, myAcmecorp)
+prefix_words = [
+  "the", "my", "i", "we", "our", "a", "an", "iam",
+  "admin", "super", "mega", "ultra", "best", "top",
+  "team", "go", "love", "ilove", "ilov", "iloveu",
+  "mr", "ms", "mrs", "dr", "sir",
+  "big", "new", "old", "hot", "cool",
+  "cyber", "tech", "hack", "code", "dev",
+  "pro", "max", "hyper", "giga", "tera",
+  "dark", "shadow", "black", "red", "blue",
+  "king", "queen", "lord", "master", "chief",
+  "secret", "hidden", "private", "public",
+  "its", "this", "that",
+]
+
+# ── Separators ───────────────────────────────────────────────────────────────
+# Placed between keyword and appended/prepended content.
+
+# Full set of separators
+separators = [
+  "", "_", "-", ".", "@", "#", "!", " ",
+  "__", "--", "..", "@@", "##", "!!", "&",
+  "&&", "*", "**", "%", "%%", "+", "++",
+  "?", "??",
+]
+
+# Compact set for cross-product stages
+separators_compact = ["", "_", "-", ".", "@", "#"]
+
+# ── Keyboard walks ───────────────────────────────────────────────────────────
+# Common keyboard walk patterns used in passwords.
+
+keyboard_walks = [
+  "qwerty", "qwert", "qwer", "qwe",
+  "asdf", "asdfg", "asdfgh",
+  "zxcv", "zxcvb", "zxcvbn",
+  "1qaz", "2wsx", "3edc", "4rfv",
+  "qazwsx", "1qaz2wsx",
+  "!QAZ", "!qaz", "@WSX", "@wsx",
+  "1q2w3e", "1q2w3e4r",
+  "zaq1", "xsw2", "cde3",
+  "plm", "okn", "ijn", "uhb",
+  "qwertyuiop", "asdfghjkl", "zxcvbnm",
+]
+
+# ── Number sequences ─────────────────────────────────────────────────────────
+# Common number patterns found in passwords.
+
+number_sequences = [
+  "0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
+  "00", "01", "10", "11", "12", "13", "21", "22", "23", "33", "42", "44",
+  "55", "66", "69", "77", "88", "99",
+  "000", "001", "007", "010", "069", "100", "111", "112", "123",
+  "200", "222", "234", "300", "321", "333", "345",
+  "400", "420", "444", "456", "500", "555", "567",
+  "600", "666", "678", "700", "777", "786", "789",
+  "800", "888", "900", "911", "999",
+  "0000", "1111", "1234", "1337", "2222", "3333", "4321", "4444",
+  "5555", "6666", "6969", "7777", "8888", "9999",
+  "12345", "54321", "11111", "12321", "13579",
+  "123456", "654321", "111111", "123321",
+  "1234567", "12345678", "123456789", "1234567890",
+  "0987654321", "9876543210",
+  "1122", "2233", "3344", "1212", "2323", "1010",
+  "2468", "1357", "0101", "1001", "2002", "3003",
+]
+
+# ── Year ranges ──────────────────────────────────────────────────────────────
+# Full years (e.g. 1950, 2026) and two-digit short years (e.g. 00, 26, 99)
+# are generated from these ranges and used in append/prepend/patterns.
+
+[years]
+full_start  = 1950   # start of 4-digit year range (inclusive)
+full_end    = 2050   # end of 4-digit year range (inclusive)
+short_start = 0      # first 2-digit short year range: 00–50
+short_end   = 50
+short_start2 = 70    # second 2-digit short year range: 70–99
+short_end2   = 99
+
+# ── Pattern building ─────────────────────────────────────────────────────────
+# These lists are cross-multiplied to build the "common patterns" pool
+# (e.g. "!2026", "2026!", "#123$", "!@#2027", "27!@#").
+
+[patterns]
+# Symbols crossed with every year and digit
+symbols = ["!", "@", "#", "$", "%", "*", "!!", "!@#", "!@", "@!"]
+
+# Symbol pairs crossed with pattern_numbers: s1 + number + s2
+symbol_pairs = ["!", "@", "#", "$", "%", "*"]
+
+# Multi-char symbol strings crossed with pattern_years
+multi_symbols = ["!@#", "!@#$", "#@!", "$#@!", "!@#$%"]
+
+# Numbers used in symbol-pair patterns
+numbers = [
+  "1", "2", "3", "12", "13", "21", "23",
+  "123", "321", "1234", "4321",
+  "2027", "2026", "2025", "2024", "2023",
+  "27", "26", "25", "24", "23",
+]
+
+# Years used in multi-symbol patterns
+years = ["2024", "2025", "2026", "2027", "24", "25", "26", "27"]
+
+# ── Leet speak substitutions ─────────────────────────────────────────────────
+# Maps each character to its possible l33t replacements.
+# Both cases are listed so that leet works regardless of input case.
+
+[leet]
+a = ["@", "4"]
+A = ["@", "4"]
+b = ["8"]
+B = ["8"]
+c = ["("]
+C = ["("]
+d = ["|"]
+D = ["|"]
+e = ["3"]
+E = ["3"]
+g = ["9", "6"]
+G = ["9", "6"]
+h = ["#"]
+H = ["#"]
+i = ["1", "!"]
+I = ["1", "!"]
+l = ["1", "|"]
+L = ["1", "|"]
+n = ["~"]
+N = ["~"]
+o = ["0"]
+O = ["0"]
+r = ["2"]
+R = ["2"]
+s = ["5", "$"]
+S = ["5", "$"]
+t = ["7", "+"]
+T = ["7", "+"]
+u = ["v"]
+U = ["v"]
+x = ["%"]
+X = ["%"]
+z = ["2"]
+Z = ["2"]
+

@@ -1,17 +1,14 @@
 package transform
 
 // CombineTransformer chains multiple transformers: output of one feeds the next.
-// This enables multi-stage transformations like leet -> append symbol -> append year.
 type CombineTransformer struct {
 	Stages          []Transformer
-	MaxPerWord      int // max total output variants (0 = unlimited)
+	MaxPerWord      int // max total output per input word (0 = unlimited)
 	MaxIntermediate int // max variants carried between non-final stages (0 = unlimited)
 }
 
 func (c *CombineTransformer) Name() string { return "combine" }
 
-// Transform returns all results in a single slice. Used internally by other transformers.
-// For pipeline use, prefer TransformStream to avoid large allocations.
 func (c *CombineTransformer) Transform(input string) []string {
 	var all []string
 	c.TransformStream(input, func(batch []string) {
@@ -20,9 +17,6 @@ func (c *CombineTransformer) Transform(input string) []string {
 	return all
 }
 
-// TransformStream processes the chain and emits final-stage results in chunks via emit.
-// Intermediate stages are materialized (bounded by MaxIntermediate), but the final stage
-// streams chunk-by-chunk so millions of results never need to live in memory at once.
 func (c *CombineTransformer) TransformStream(input string, emit func([]string)) {
 	maxPerWord := c.MaxPerWord
 	maxIntermediate := c.MaxIntermediate
@@ -32,11 +26,10 @@ func (c *CombineTransformer) TransformStream(input string, emit func([]string)) 
 		return
 	}
 
-	// Build intermediate results through all stages except the last
 	current := []string{input}
 	for i := 0; i < len(c.Stages)-1; i++ {
 		stage := c.Stages[i]
-		cap := maxIntermediate // 0 = unlimited
+		cap := maxIntermediate
 
 		seen := make(map[string]struct{}, len(current)*2)
 		var next []string
@@ -55,11 +48,11 @@ func (c *CombineTransformer) TransformStream(input string, emit func([]string)) 
 		current = next
 	}
 
-	// Stream the final stage in chunks
+	// Stream the final stage
 	{
 		finalStage := c.Stages[len(c.Stages)-1]
 		var emitted int
-		const chunkSize = 64 * 1024 // flush every 64K candidates
+		const chunkSize = 64 * 1024
 
 		chunk := make([]string, 0, chunkSize)
 
@@ -77,7 +70,6 @@ func (c *CombineTransformer) TransformStream(input string, emit func([]string)) 
 				}
 			}
 		}
-		// Flush remaining
 		if len(chunk) > 0 {
 			if maxPerWord > 0 && emitted+len(chunk) > maxPerWord {
 				chunk = chunk[:maxPerWord-emitted]
@@ -89,13 +81,12 @@ func (c *CombineTransformer) TransformStream(input string, emit func([]string)) 
 	}
 }
 
-// Streamer is an optional interface transformers can implement to support
-// chunk-based streaming output instead of materializing everything.
+// Streamer is an optional interface for chunk-based streaming output.
 type Streamer interface {
 	TransformStream(input string, emit func([]string))
 }
 
-// MergeTransformer runs multiple transformers independently and merges results
+// MergeTransformer runs multiple transformers independently and merges results.
 type MergeTransformer struct {
 	Transformers []Transformer
 }

@@ -11,6 +11,8 @@ import (
 	"github.com/Xre0uS/wordlisttool/wordlists"
 )
 
+const defaultConfigFile = "config.toml"
+
 func main() {
 	fmt.Fprint(os.Stderr, `
  █░█░█ █▀█ █▀█ █▀▄ █░░ █ █▀ ▀█▀ ▀█▀ █▀█ █▀█ █░░
@@ -39,12 +41,12 @@ func main() {
 
 func printUsage() {
 	fmt.Fprintf(os.Stderr, `Usage:
-  wordlisttool estimate <keywords.txt>              Estimate output per preset (run first)
+  wordlisttool estimate <keywords.txt> [options]    Estimate output per preset
   wordlisttool generate <keywords.txt> [options]    Generate wordlist from keywords
-  wordlisttool merge <files...> [options]            Merge multiple wordlists into one
+  wordlisttool merge <files...> [options]            Merge multiple wordlists
 
 ━━━ Estimate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  wordlisttool estimate <keywords.txt>
+  wordlisttool estimate <keywords.txt> [-config <file>]
 
   Dry-run: estimates candidate counts, output file size, and memory
   usage for all three presets. Run this first to size your job.
@@ -52,19 +54,20 @@ func printUsage() {
 ━━━ Generate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   wordlisttool generate <keywords.txt> [options]
 
-  -o  <file>        Output wordlist file (default: wordlist.txt)
+  -o  <file>        Output file (default: wordlist.txt)
   -t  <n>           Worker threads (default: CPU count)
-  -preset <preset>  Generation preset: short, standard, long (default: standard)
+  -preset <preset>  Preset: short, standard, long (default: standard)
   -min-length <n>   Minimum candidate length (default: 8)
-  -max <n>          Maximum candidates, 0 = unlimited (default: 0)
-  -v                Show progress during generation
+  -max <n>          Max candidates, 0 = unlimited (default: 0)
+  -config <file>    Data config TOML (default: config.toml)
+  -v                Show progress
 
-  -no-case          Disable case transformations
-  -no-leet          Disable l33t speak transformations
-  -no-append        Disable append transformations
-  -no-prepend       Disable prepend transformations
+  -no-case          Disable case transforms
+  -no-leet          Disable l33t speak
+  -no-append        Disable append
+  -no-prepend       Disable prepend
   -no-combine       Disable combination chains
-  -leet-max <n>     Max leet variants per word (0 = use preset default)
+  -leet-max <n>     Max leet variants per word (0 = preset default)
 
 ━━━ Merge ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   wordlisttool merge <file1> <file2> [file3 ...] [options]
@@ -72,35 +75,66 @@ func printUsage() {
   -o <file>         Output file (default: merged.txt)
   -y                Skip confirmation prompt
 
-  Concatenates wordlists in order. Shows total size and word count.
-  Output file must not already exist.
-
 ━━━ Examples ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   wordlisttool estimate keywords.txt
   wordlisttool generate keywords.txt -o wordlist.txt -preset long -v
+  wordlisttool generate keywords.txt -config custom.toml -preset short
   wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
 `)
 }
 
-// ---------------------------------------------------------------
-// estimate subcommand
-// ---------------------------------------------------------------
+func loadConfig(path string) {
+	if path == "" {
+		path = defaultConfigFile
+	}
+	if err := wordlists.LoadFromTOML(path); err != nil {
+		fmt.Fprintf(os.Stderr, "[!] Error loading %s: %v\n", path, err)
+		os.Exit(1)
+	}
+}
 
 func runEstimate(args []string) {
 	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" {
-		fmt.Fprintf(os.Stderr, `Usage: wordlisttool estimate <keywords.txt>
+		fmt.Fprintf(os.Stderr, `Usage: wordlisttool estimate <keywords.txt> [-config <file>]
 
 Estimate candidate counts for all three presets without generating output.
-Useful for sizing a run before committing disk space and time.
+
+Options:
+  -config <file>  Data config TOML (default: config.toml)
 `)
 		os.Exit(0)
 	}
 
-	inputFile := args[0]
+	var inputFile, configFile string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-config":
+			if i+1 >= len(args) {
+				fmt.Fprintln(os.Stderr, "[!] Error: -config requires a filename")
+				os.Exit(1)
+			}
+			i++
+			configFile = args[i]
+		default:
+			if len(args[i]) > 0 && args[i][0] == '-' {
+				fmt.Fprintf(os.Stderr, "[!] Error: unknown flag: %s\n", args[i])
+				os.Exit(1)
+			}
+			if inputFile == "" {
+				inputFile = args[i]
+			}
+		}
+	}
+	if inputFile == "" {
+		fmt.Fprintln(os.Stderr, "[!] Error: keyword file is required")
+		os.Exit(1)
+	}
 	if _, err := os.Stat(inputFile); os.IsNotExist(err) {
 		fmt.Fprintf(os.Stderr, "[!] Error: file not found: %s\n", inputFile)
 		os.Exit(1)
 	}
+
+	loadConfig(configFile)
 
 	keywords, err := generator.ReadKeywords(inputFile)
 	if err != nil {
@@ -156,10 +190,6 @@ Useful for sizing a run before committing disk space and time.
 	generator.PrintEstimateTable(results, keywords)
 }
 
-// ---------------------------------------------------------------
-// merge subcommand
-// ---------------------------------------------------------------
-
 func runMerge(args []string) {
 	outputFile := "merged.txt"
 	noConfirm := false
@@ -169,22 +199,14 @@ func runMerge(args []string) {
 		fmt.Fprintf(os.Stderr, `Usage: wordlisttool merge [options] <file1> <file2> [file3 ...]
 
 Merge multiple wordlists into one file, preserving order.
-Lists are concatenated as-is: file1 first, then file2, etc.
-Shows total size and asks for confirmation before writing.
-
-Flags can appear anywhere — before, between, or after file arguments.
 
 Options:
   -o <file>   Output file (default: merged.txt)
   -y          Skip confirmation prompt
   -h          Show this help
-
-Example:
-  wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
 `)
 	}
 
-	// Manual parse so flags and files can be intermixed
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
 		case "-o":
@@ -227,16 +249,14 @@ Example:
 	}
 }
 
-// ---------------------------------------------------------------
-// generate (default) subcommand
-// ---------------------------------------------------------------
-
 func runGenerate(args []string) {
 	cfg, err := config.Parse(args)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[!] Error: %v\n", err)
 		os.Exit(1)
 	}
+
+	loadConfig(cfg.ConfigFile)
 
 	transformers := buildTransformers(cfg)
 
@@ -251,10 +271,6 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 }
-
-// ---------------------------------------------------------------
-// Preset-aware leet budgets
-// ---------------------------------------------------------------
 
 func leetBudget(cfg *config.Config, short, standard, long int) int {
 	switch cfg.Preset {
@@ -278,14 +294,9 @@ func capBudget(cfg *config.Config, short, standard, long int) int {
 	}
 }
 
-// ---------------------------------------------------------------
-// Build transformer list based on config + preset
-// ---------------------------------------------------------------
-
 func buildTransformers(cfg *config.Config) []transform.Transformer {
 	var transformers []transform.Transformer
 
-	// ── Stage 1: Base variations (case + leet + mangle) ──
 	var base []transform.Transformer
 	if cfg.EnableCase {
 		base = append(base, &transform.CaseTransformer{})
@@ -296,7 +307,6 @@ func buildTransformers(cfg *config.Config) []transform.Transformer {
 	base = append(base, &transform.MangleTransformer{})
 	transformers = append(transformers, &transform.MergeTransformer{Transformers: base})
 
-	// ── Stage 2: Direct append / prepend ──
 	if cfg.EnableAppend {
 		transformers = append(transformers, &transform.AppendTransformer{})
 	}
@@ -304,7 +314,6 @@ func buildTransformers(cfg *config.Config) []transform.Transformer {
 		transformers = append(transformers, &transform.PrependTransformer{})
 	}
 
-	// ── Stage 3: Combination chains ──
 	if cfg.EnableCombine {
 		addCombineChains(cfg, &transformers)
 	}
@@ -314,11 +323,8 @@ func buildTransformers(cfg *config.Config) []transform.Transformer {
 
 func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 	add := func(t transform.Transformer) { *out = append(*out, t) }
-
 	isLong := cfg.Preset == config.PresetLong
 
-	// ── Case → Append (full) — all presets ──
-	// Case ~12 variants × ~10K suffixes ≈ 120K output — safe even unlimited
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.CaseTransformer{},
@@ -327,7 +333,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord: capBudget(cfg, 2_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Case → Prepend (full) — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.CaseTransformer{},
@@ -336,7 +341,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord: capBudget(cfg, 2_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Leet → Append — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.LeetTransformer{MaxVariants: leetBudget(cfg, 200, 500, 1000)},
@@ -345,7 +349,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord: capBudget(cfg, 2_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Leet → Prepend — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.LeetTransformer{MaxVariants: leetBudget(cfg, 200, 500, 1000)},
@@ -354,7 +357,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord: capBudget(cfg, 5_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Case → Leet → Append sym+year — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.CaseTransformer{},
@@ -365,7 +367,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord:      capBudget(cfg, 2_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Case → Leet → Prepend sym+num — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.CaseTransformer{},
@@ -376,7 +377,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord:      capBudget(cfg, 5_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Mangle → Append — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.MangleTransformer{},
@@ -385,7 +385,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord: capBudget(cfg, 2_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Mangle → Leet → Append — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.MangleTransformer{},
@@ -396,7 +395,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord:      capBudget(cfg, 3_000_000, 3_000_000, 8_000_000),
 	})
 
-	// ── Mangle → Case → Append — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.MangleTransformer{},
@@ -407,7 +405,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord:      capBudget(cfg, 3_000_000, 3_000_000, 8_000_000),
 	})
 
-	// ── Prepend → Case → Append (sandwich) — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.PrependTransformer{Prefixes: buildSandwichPrefixes()},
@@ -418,7 +415,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord:      capBudget(cfg, 2_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Prepend num → Leet → Append sym — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.PrependTransformer{Prefixes: buildNumberPrefixes()},
@@ -429,7 +425,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord:      capBudget(cfg, 3_000_000, 3_000_000, 8_000_000),
 	})
 
-	// ── Case → Append word → Append num+sym — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.CaseTransformer{},
@@ -440,7 +435,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord:      capBudget(cfg, 1_000_000, 3_000_000, 8_000_000),
 	})
 
-	// ── Leet → Append double (sym+year, year+sym) — all presets ──
 	add(&transform.CombineTransformer{
 		Stages: []transform.Transformer{
 			&transform.LeetTransformer{MaxVariants: leetBudget(cfg, 100, 200, 500)},
@@ -449,7 +443,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		MaxPerWord: capBudget(cfg, 5_000_000, 5_000_000, 10_000_000),
 	})
 
-	// ── Case → Leet → Prepend → Append (4-stage) — long only ──
 	if isLong {
 		add(&transform.CombineTransformer{
 			Stages: []transform.Transformer{
@@ -474,8 +467,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		})
 	}
 
-	// ── Case → Append(word+pattern) → Prepend(short) — long only ──
-	// Produces: 0SGEadmin!@#, 1SGEadmin!@#, !SGEpassword2026, etc.
 	if isLong || cfg.Preset == config.PresetStandard {
 		shortPrepends := []string{
 			"0", "1", "2", "3", "4", "5", "6", "7", "8", "9",
@@ -489,8 +480,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 				"420", "666", "777", "000",
 			)
 		}
-		// Case → Append(word+sym) → Prepend(short digit/sym)
-		// Intermediates: 12 case × ~18K suffixes — need high cap to preserve variety
 		add(&transform.CombineTransformer{
 			Stages: []transform.Transformer{
 				&transform.CaseTransformer{},
@@ -501,7 +490,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 			MaxPerWord:      capBudget(cfg, 0, 3_000_000, 8_000_000),
 		})
 
-		// Case → Append(sym+year) → Prepend(short digit/sym)
 		add(&transform.CombineTransformer{
 			Stages: []transform.Transformer{
 				&transform.CaseTransformer{},
@@ -513,7 +501,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		})
 	}
 
-	// ── Leet → Append(sym+year) → Prepend(short) — long only ──
 	if isLong {
 		add(&transform.CombineTransformer{
 			Stages: []transform.Transformer{
@@ -530,10 +517,6 @@ func addCombineChains(cfg *config.Config, out *[]transform.Transformer) {
 		})
 	}
 }
-
-// ---------------------------------------------------------------
-// Suffix / prefix builders
-// ---------------------------------------------------------------
 
 func buildCombineSuffixes() []string {
 	var s []string
@@ -683,32 +666,24 @@ func buildDoubleAppendSuffixes() []string {
 	return s
 }
 
-// buildWordPatternSuffixes builds word + symbol/number combo suffixes
-// e.g. "admin!@#", "password2026", "admin!@#0", "secure!", "admin123!"
 func buildWordPatternSuffixes() []string {
 	var s []string
 	syms := []string{"!", "@", "#", "$", "!!", "!@#", "!@#$", "!@#$%", "@!", "#!"}
 	nums := []string{"0", "1", "2", "12", "123", "1234", "2024", "2025", "2026", "2027"}
 
 	for _, w := range wordlists.CommonSuffixWords {
-		// word alone
 		s = append(s, w)
-		// word + symbol
 		for _, sym := range syms {
 			s = append(s, w+sym)
 		}
-		// word + number
 		for _, n := range nums {
 			s = append(s, w+n)
 		}
-		// word + symbol + number
 		for _, sym := range []string{"!", "@", "#"} {
 			for _, n := range []string{"0", "1", "2", "123", "2026", "2027"} {
-				s = append(s, w+sym+n)
-				s = append(s, w+n+sym)
+				s = append(s, w+sym+n, w+n+sym)
 			}
 		}
-		// word + number + symbol combo
 		for _, p := range wordlists.CommonPatterns[:min(len(wordlists.CommonPatterns), 50)] {
 			s = append(s, w+p)
 		}

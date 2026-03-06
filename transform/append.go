@@ -4,9 +4,8 @@ import (
 	"github.com/Xre0uS/wordlisttool/wordlists"
 )
 
-// AppendTransformer appends common suffixes to inputs
+// AppendTransformer appends suffixes to inputs. Uses built-in defaults when Suffixes is nil.
 type AppendTransformer struct {
-	// Suffixes to append; if nil, uses default wordlists
 	Suffixes []string
 }
 
@@ -28,7 +27,6 @@ func (a *AppendTransformer) Transform(input string) []string {
 		}
 	}
 
-	// Original
 	add(input)
 
 	for _, suffix := range suffixes {
@@ -41,37 +39,17 @@ func (a *AppendTransformer) Transform(input string) []string {
 func buildDefaultSuffixes() []string {
 	var suffixes []string
 
-	// Full symbols
 	suffixes = append(suffixes, wordlists.SymbolsFull...)
-
-	// Single digits
 	suffixes = append(suffixes, wordlists.Digits...)
-
-	// All two-digit numbers 00-99
 	suffixes = append(suffixes, wordlists.TwoDigits...)
-
-	// All three-digit numbers 000-999
 	suffixes = append(suffixes, wordlists.ThreeDigits...)
-
-	// All four-digit numbers 0000-9999
 	suffixes = append(suffixes, wordlists.FourDigits...)
-
-	// Number sequences
 	suffixes = append(suffixes, wordlists.NumberSequences...)
-
-	// Years
 	suffixes = append(suffixes, wordlists.Years...)
-
-	// Keyboard walks
 	suffixes = append(suffixes, wordlists.KeyboardWalks...)
-
-	// Common suffix words
 	suffixes = append(suffixes, wordlists.CommonSuffixWords...)
-
-	// Common patterns (symbol+number combos)
 	suffixes = append(suffixes, wordlists.CommonPatterns...)
 
-	// Separator + number/year/word combos
 	for _, sep := range wordlists.SeparatorsShort {
 		if sep == "" {
 			continue
@@ -96,7 +74,6 @@ func buildDefaultSuffixes() []string {
 		}
 	}
 
-	// Number + symbol combos
 	for _, n := range wordlists.Digits {
 		for _, s := range wordlists.SymbolsShort {
 			suffixes = append(suffixes, n+s)
@@ -114,21 +91,18 @@ func buildDefaultSuffixes() []string {
 		}
 	}
 
-	// Year + symbol
 	for _, y := range wordlists.Years {
 		for _, s := range wordlists.SymbolsFull {
 			suffixes = append(suffixes, y+s)
 		}
 	}
 
-	// Symbol + year
 	for _, s := range wordlists.SymbolsFull {
 		for _, y := range wordlists.Years {
 			suffixes = append(suffixes, s+y)
 		}
 	}
 
-	// Word + digit, word + year
 	for _, w := range wordlists.CommonSuffixWords {
 		for _, d := range wordlists.Digits {
 			suffixes = append(suffixes, w+d)
@@ -141,7 +115,6 @@ func buildDefaultSuffixes() []string {
 		}
 	}
 
-	// Keyboard walk + suffix
 	for _, kw := range wordlists.KeyboardWalks {
 		for _, s := range []string{"!", "@", "#", "1", "123"} {
 			suffixes = append(suffixes, kw+s)

@@ -1,17 +1,12 @@
 package transform
 
-// Transformer is the interface that all transformation modules implement.
-// Given an input string, it returns all transformed variants.
+// Transformer is the interface all transformation modules implement.
 type Transformer interface {
-	// Name returns a human-readable name for this transformer
 	Name() string
-	// Transform takes an input string and returns all generated variants
 	Transform(input string) []string
 }
 
-// ApplyAll runs every transformer on the input and collects unique results.
-// NOTE: Only used for small-output contexts (e.g. base transforms).
-// For the pipeline, use StreamAll instead.
+// ApplyAll runs every transformer and collects unique results.
 func ApplyAll(transformers []Transformer, input string) []string {
 	seen := make(map[string]struct{})
 	var results []string
@@ -28,11 +23,8 @@ func ApplyAll(transformers []Transformer, input string) []string {
 	return results
 }
 
-// StreamAll runs every transformer on the input and calls emit for each batch.
-// If a transformer implements the Streamer interface, its streaming method is used
-// to avoid materializing millions of results at once. Otherwise falls back to Transform.
-// No filtering is done here — min-length and dedup are applied at the write stage.
-// Returns the total number of candidates emitted.
+// StreamAll runs transformers and emits results in batches via emit.
+// Uses streaming where supported to avoid materializing everything in memory.
 func StreamAll(transformers []Transformer, input string, emit func([]string)) int64 {
 	var total int64
 
@@ -54,7 +46,6 @@ func StreamAll(transformers []Transformer, input string, emit func([]string)) in
 	return total
 }
 
-// ApplyChain applies transformers in sequence: output of one feeds the next.
 func ApplyChain(transformers []Transformer, input string) []string {
 	current := []string{input}
 

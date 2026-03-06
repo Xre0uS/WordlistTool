@@ -4,9 +4,8 @@ import (
 	"github.com/Xre0uS/wordlisttool/wordlists"
 )
 
-// PrependTransformer prepends common prefixes to inputs
+// PrependTransformer prepends prefixes to inputs. Uses built-in defaults when Prefixes is nil.
 type PrependTransformer struct {
-	// Prefixes to prepend; if nil, uses default wordlists
 	Prefixes []string
 }
 
@@ -28,7 +27,6 @@ func (p *PrependTransformer) Transform(input string) []string {
 		}
 	}
 
-	// Original
 	add(input)
 
 	for _, prefix := range prefixes {
@@ -41,37 +39,17 @@ func (p *PrependTransformer) Transform(input string) []string {
 func buildDefaultPrefixes() []string {
 	var prefixes []string
 
-	// Full symbols
 	prefixes = append(prefixes, wordlists.SymbolsFull...)
-
-	// Single digits
 	prefixes = append(prefixes, wordlists.Digits...)
-
-	// All two-digit numbers
 	prefixes = append(prefixes, wordlists.TwoDigits...)
-
-	// All three-digit numbers
 	prefixes = append(prefixes, wordlists.ThreeDigits...)
-
-	// All four-digit numbers
 	prefixes = append(prefixes, wordlists.FourDigits...)
-
-	// Number sequences
 	prefixes = append(prefixes, wordlists.NumberSequences...)
-
-	// Years
 	prefixes = append(prefixes, wordlists.Years...)
-
-	// Keyboard walks
 	prefixes = append(prefixes, wordlists.KeyboardWalks...)
-
-	// Common prefix words
 	prefixes = append(prefixes, wordlists.CommonPrefixWords...)
-
-	// Common patterns
 	prefixes = append(prefixes, wordlists.CommonPatterns...)
 
-	// Symbol + number combos
 	for _, s := range wordlists.SymbolsShort {
 		for _, n := range wordlists.Digits {
 			prefixes = append(prefixes, s+n, n+s)
@@ -84,14 +62,12 @@ func buildDefaultPrefixes() []string {
 		}
 	}
 
-	// Symbol + year
 	for _, s := range wordlists.SymbolsFull {
 		for _, y := range wordlists.Years {
 			prefixes = append(prefixes, s+y, y+s)
 		}
 	}
 
-	// Separator + word/number combos
 	for _, sep := range wordlists.SeparatorsShort {
 		if sep == "" {
 			continue
@@ -116,7 +92,6 @@ func buildDefaultPrefixes() []string {
 		}
 	}
 
-	// Word + number
 	for _, w := range wordlists.CommonPrefixWords {
 		for _, d := range wordlists.Digits {
 			prefixes = append(prefixes, w+d)

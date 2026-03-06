@@ -5,7 +5,7 @@ import (
 	"unicode"
 )
 
-// MangleTransformer applies various string mangling operations
+// MangleTransformer applies string mangling: reverse, duplicate, truncate, etc.
 type MangleTransformer struct{}
 
 func (m *MangleTransformer) Name() string { return "mangle" }
@@ -24,7 +24,6 @@ func (m *MangleTransformer) Transform(input string) []string {
 		}
 	}
 
-	// Original
 	add(input)
 
 	// Reversed
@@ -35,11 +34,10 @@ func (m *MangleTransformer) Transform(input string) []string {
 	}
 	add(string(reversed))
 
-	// Duplicated: googleoogle
+	// Duplicated
 	add(input + input)
 
-	// Doubled: googlegoogle (same as above but emphasize)
-	// First half + first half if even length
+	// Half-word repetition
 	if len(runes) >= 2 {
 		half := len(runes) / 2
 		add(string(runes[:half]) + string(runes[:half]))
@@ -48,7 +46,6 @@ func (m *MangleTransformer) Transform(input string) []string {
 
 	// Reversed + original
 	add(string(reversed) + input)
-
 	// Original + reversed
 	add(input + string(reversed))
 
@@ -64,7 +61,7 @@ func (m *MangleTransformer) Transform(input string) []string {
 		add(string(noVowels))
 	}
 
-	// Remove consonants (keep vowels)
+	// Remove consonants
 	var vowelsOnly []rune
 	for _, r := range runes {
 		lr := unicode.ToLower(r)
@@ -76,47 +73,44 @@ func (m *MangleTransformer) Transform(input string) []string {
 		add(string(vowelsOnly))
 	}
 
-	// First N characters (truncations)
+	// Truncations (first N / last N)
 	for _, n := range []int{3, 4, 5, 6, 7, 8} {
 		if n < len(runes) {
 			add(string(runes[:n]))
 		}
 	}
 
-	// Last N characters
 	for _, n := range []int{3, 4, 5, 6} {
 		if n < len(runes) {
 			add(string(runes[len(runes)-n:]))
 		}
 	}
 
-	// Double each character: ggooooggllee
+	// Double each character
 	var doubled []rune
 	for _, r := range runes {
 		doubled = append(doubled, r, r)
 	}
 	add(string(doubled))
 
-	// Initials + rest pattern: first char + last char
+	// First + last character
 	if len(runes) >= 2 {
 		add(string([]rune{runes[0], runes[len(runes)-1]}))
 	}
 
-	// Capitalize first, lowercase rest + number suffix handled by case+append
-	// But we can do: word with spaces replaced by common separators
+	// Replace spaces with common separators
 	if strings.Contains(input, " ") {
 		for _, sep := range []string{"", "_", "-", ".", "@"} {
 			add(strings.ReplaceAll(input, " ", sep))
 		}
 	}
 
-	// CamelCase split points: insert separators at case transitions
 	lower := strings.ToLower(input)
 	upper := strings.ToUpper(input)
 	_ = lower
 	_ = upper
 
-	// Stutter: first letter repeated (ggoogle, gggoogle)
+	// Stutter: repeat first letter
 	if len(runes) >= 1 {
 		add(string([]rune{runes[0]}) + input)
 		add(string([]rune{runes[0], runes[0]}) + input)

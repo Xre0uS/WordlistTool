@@ -5,11 +5,7 @@ import (
 	"unsafe"
 )
 
-// bloom implements a memory-efficient bloom filter for approximate deduplication.
-// Uses two independent hash functions (FNV-1a based) to set/check k positions.
-//
-// Memory usage: ~bits/8 bytes. For 500M expected items at 1% FPR: ~570MB.
-// For 100M items at 1% FPR: ~114MB.
+// bloom is a memory-efficient bloom filter for approximate deduplication.
 type bloom struct {
 	bits []uint64
 	k    uint   // number of hash functions
@@ -17,7 +13,7 @@ type bloom struct {
 }
 
 // newBloom creates a bloom filter sized for expectedItems at the given false-positive rate.
-// maxMemoryMB caps the memory usage; if the optimal size exceeds this, the FPR will be higher.
+// maxMemoryMB caps memory; if the optimal size exceeds this, the FPR will be higher.
 func newBloom(expectedItems int64, fpr float64, maxMemoryMB int) *bloom {
 	if expectedItems <= 0 {
 		expectedItems = 1_000_000
@@ -26,11 +22,11 @@ func newBloom(expectedItems int64, fpr float64, maxMemoryMB int) *bloom {
 		fpr = 0.01
 	}
 
-	// Optimal number of bits: m = -n*ln(p) / (ln2)^2
+	// Optimal bit count: m = -n*ln(p) / (ln2)^2
 	n := float64(expectedItems)
 	m := uint64(math.Ceil(-n * math.Log(fpr) / (math.Ln2 * math.Ln2)))
 
-	// Optimal number of hash functions: k = (m/n) * ln2
+	// Optimal hash count: k = (m/n) * ln2
 	k := uint(math.Ceil(float64(m) / n * math.Ln2))
 	if k < 2 {
 		k = 2
@@ -56,13 +52,11 @@ func newBloom(expectedItems int64, fpr float64, maxMemoryMB int) *bloom {
 	}
 }
 
-// memoryMB returns the approximate memory usage in MB.
 func (b *bloom) memoryMB() int {
 	return int(unsafe.Sizeof(uint64(0)) * uintptr(len(b.bits)) / (1024 * 1024))
 }
 
-// AddAndCheck atomically adds the item and returns true if it was likely already present.
-// This is NOT thread-safe — each goroutine should have its own bloom or use external sync.
+// TestAndAdd returns true if the item was likely already present, then adds it.
 func (b *bloom) TestAndAdd(data string) bool {
 	h1, h2 := b.hash(data)
 	alreadyPresent := true
@@ -79,23 +73,21 @@ func (b *bloom) TestAndAdd(data string) bool {
 	return alreadyPresent
 }
 
-// hash computes two independent 64-bit hashes using FNV-1a with different offsets.
 func (b *bloom) hash(s string) (uint64, uint64) {
-	// FNV-1a 64-bit
 	const (
 		offset64 = 14695981039346656037
 		prime64  = 1099511628211
 	)
 
 	h1 := uint64(offset64)
-	h2 := uint64(offset64 ^ 0x6c62272e07bb0142) // different seed
+	h2 := uint64(offset64 ^ 0x6c62272e07bb0142)
 
 	for i := 0; i < len(s); i++ {
 		c := uint64(s[i])
 		h1 ^= c
 		h1 *= prime64
 		h2 ^= c
-		h2 *= prime64 + 2 // slightly different multiplier
+		h2 *= prime64 + 2
 	}
 
 	return h1, h2
