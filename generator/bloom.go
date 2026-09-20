@@ -56,9 +56,44 @@ func (b *bloom) memoryMB() int {
 	return int(unsafe.Sizeof(uint64(0)) * uintptr(len(b.bits)) / (1024 * 1024))
 }
 
+func (b *bloom) memoryBytes() int64 {
+	return int64(unsafe.Sizeof(uint64(0))) * int64(len(b.bits))
+}
+
+// fpr returns the false-positive rate with n items stored: (1 - e^(-kn/m))^k.
+func (b *bloom) fpr(n int64) float64 {
+	if n <= 0 || b.m == 0 {
+		return 0
+	}
+	exp := math.Exp(-float64(b.k) * float64(n) / float64(b.m))
+	return math.Pow(1-exp, float64(b.k))
+}
+
 // TestAndAdd returns true if the item was likely already present, then adds it.
 func (b *bloom) TestAndAdd(data string) bool {
 	h1, h2 := b.hash(data)
+	return b.testAndAdd(h1, h2)
+}
+
+// TestAndAddBytes is TestAndAdd for a byte slice, skipping the string copy.
+func (b *bloom) TestAndAddBytes(data []byte) bool {
+	h1, h2 := b.hashBytes(data)
+	return b.testAndAdd(h1, h2)
+}
+
+// TestBytes reports whether the item was likely added, without adding it.
+func (b *bloom) TestBytes(data []byte) bool {
+	h1, h2 := b.hashBytes(data)
+	for i := uint(0); i < b.k; i++ {
+		pos := (h1 + uint64(i)*h2) % b.m
+		if b.bits[pos/64]&(uint64(1)<<(pos%64)) == 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func (b *bloom) testAndAdd(h1, h2 uint64) bool {
 	alreadyPresent := true
 	for i := uint(0); i < b.k; i++ {
 		pos := (h1 + uint64(i)*h2) % b.m
@@ -74,6 +109,26 @@ func (b *bloom) TestAndAdd(data string) bool {
 }
 
 func (b *bloom) hash(s string) (uint64, uint64) {
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+
+	h1 := uint64(offset64)
+	h2 := uint64(offset64 ^ 0x6c62272e07bb0142)
+
+	for i := 0; i < len(s); i++ {
+		c := uint64(s[i])
+		h1 ^= c
+		h1 *= prime64
+		h2 ^= c
+		h2 *= prime64 + 2
+	}
+
+	return h1, h2
+}
+
+func (b *bloom) hashBytes(s []byte) (uint64, uint64) {
 	const (
 		offset64 = 14695981039346656037
 		prime64  = 1099511628211

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
 
 	"github.com/Xre0uS/wordlisttool/config"
 	"github.com/Xre0uS/wordlisttool/generator"
@@ -32,6 +33,8 @@ func main() {
 		runGenerate(os.Args[2:])
 	case "merge":
 		runMerge(os.Args[2:])
+	case "diff":
+		runDiff(os.Args[2:])
 	default:
 		fmt.Fprintf(os.Stderr, "[!] Unknown command: %s\n\n", os.Args[1])
 		printUsage()
@@ -44,6 +47,7 @@ func printUsage() {
   wordlisttool estimate <keywords.txt> [options]    Estimate output per preset
   wordlisttool generate <keywords.txt> [options]    Generate wordlist from keywords
   wordlisttool merge <files...> [options]            Merge multiple wordlists
+  wordlisttool diff <new...> -x <tested...> [options]  Strip already-tested words
 
 ━━━ Estimate ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   wordlisttool estimate <keywords.txt> [-config <file>]
@@ -75,11 +79,31 @@ func printUsage() {
   -o <file>         Output file (default: merged.txt)
   -y                Skip confirmation prompt
 
+━━━ Diff ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  wordlisttool diff <new.txt> [new2.txt ...] -x <tested.txt> [options]
+
+  A wordlist is exhausted and the next one is going in. Strips every
+  word the previous wordlists already covered and writes what is left
+  to a new file, in input order.
+
+  -x <file>         Previously tested wordlist (repeat for more)
+  -o <file>         Output file (default: remaining.txt)
+  -f                Overwrite the output file if it exists
+  -y                Skip confirmation prompt
+  -v                Show progress
+  -keep-dupes       Keep repeats within the new wordlist(s)
+
+  -mode <mode>      fingerprint (default), full, or approx — see -h
+  -mem <MB>         Memory cap for -mode approx (default: 1024)
+  -fpr <rate>       False-positive rate for -mode approx (default: 0.0001)
+
 ━━━ Examples ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   wordlisttool estimate keywords.txt
   wordlisttool generate keywords.txt -o wordlist.txt -preset long -v
   wordlisttool generate keywords.txt -config custom.toml -preset short
   wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
+  wordlisttool diff new.txt -x rockyou.txt -x run1.txt -o remaining.txt -v
+  wordlisttool diff big.txt -x tested.txt -mode approx -mem 2048 -y
 `)
 }
 
@@ -244,6 +268,126 @@ Options:
 	}
 
 	if err := generator.RunMerge(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "[!] Error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+func runDiff(args []string) {
+	cfg := &generator.DiffConfig{
+		OutputFile: "remaining.txt",
+		MemLimitMB: 1024,
+		FPR:        0.0001,
+	}
+
+	usage := func() {
+		fmt.Fprintf(os.Stderr, `Usage: wordlisttool diff <new.txt> [new2.txt ...] -x <tested.txt> [options]
+
+Strip every word the already-tested wordlists cover from the new wordlist(s)
+and write what is left to a new file, in input order.
+
+Options:
+  -x <file>      Previously tested wordlist (repeat for more)
+  -o <file>      Output file (default: remaining.txt)
+  -f             Overwrite the output file if it exists
+  -y             Skip confirmation prompt
+  -v             Show progress
+  -keep-dupes    Keep repeats within the new wordlist(s)
+  -h             Show this help
+
+  -mode <mode>   fingerprint  63-bit fingerprints, ~16 B/word, small collision
+                              risk that drops an untested word (default)
+                 full         whole words, no collision risk, ~16 B/word plus
+                              the word itself
+                 approx       bloom filter, memory capped by -mem, drops
+                              untested words at the -fpr rate
+  -mem <MB>      Memory cap for -mode approx (default: 1024)
+  -fpr <rate>    False-positive rate for -mode approx (default: 0.0001)
+
+Examples:
+  wordlisttool diff new.txt -x rockyou.txt -o remaining.txt -v
+  wordlisttool diff new1.txt new2.txt -x run1.txt -x run2.txt -y
+  wordlisttool diff new.txt -x tested.txt -mode full -v
+  wordlisttool diff huge.txt -x tested.txt -mode approx -mem 2048
+`)
+	}
+
+	needValue := func(i int, flagName string) string {
+		if i+1 >= len(args) {
+			fmt.Fprintf(os.Stderr, "[!] Error: %s requires a value\n", flagName)
+			os.Exit(1)
+		}
+		return args[i+1]
+	}
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "-o":
+			cfg.OutputFile = needValue(i, "-o")
+			i++
+		case "-x", "-exclude", "--exclude":
+			cfg.ExcludeFiles = append(cfg.ExcludeFiles, needValue(i, args[i]))
+			i++
+		case "-mem":
+			v := needValue(i, "-mem")
+			i++
+			n, err := strconv.Atoi(v)
+			if err != nil || n < 1 {
+				fmt.Fprintf(os.Stderr, "[!] Error: -mem needs a positive integer (MB), got %q\n", v)
+				os.Exit(1)
+			}
+			cfg.MemLimitMB = n
+		case "-fpr":
+			v := needValue(i, "-fpr")
+			i++
+			f, err := strconv.ParseFloat(v, 64)
+			if err != nil || f <= 0 || f >= 1 {
+				fmt.Fprintf(os.Stderr, "[!] Error: -fpr needs a rate between 0 and 1, got %q\n", v)
+				os.Exit(1)
+			}
+			cfg.FPR = f
+		case "-mode":
+			v := needValue(i, "-mode")
+			i++
+			mode, err := generator.ParseDiffMode(v)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "[!] Error: %v\n", err)
+				os.Exit(1)
+			}
+			cfg.Mode = mode
+		case "-keep-dupes":
+			cfg.KeepDupes = true
+		case "-f":
+			cfg.Force = true
+		case "-y":
+			cfg.NoConfirm = true
+		case "-v":
+			cfg.Verbose = true
+		case "-h", "--help":
+			usage()
+			os.Exit(0)
+		default:
+			if len(args[i]) > 0 && args[i][0] == '-' {
+				fmt.Fprintf(os.Stderr, "[!] Error: unknown flag: %s\n", args[i])
+				usage()
+				os.Exit(1)
+			}
+			cfg.InputFiles = append(cfg.InputFiles, args[i])
+		}
+	}
+
+	if len(cfg.InputFiles) == 0 {
+		fmt.Fprintln(os.Stderr, "[!] Error: at least one new wordlist is required")
+		usage()
+		os.Exit(1)
+	}
+	if len(cfg.ExcludeFiles) == 0 {
+		fmt.Fprintln(os.Stderr, "[!] Error: at least one tested wordlist is required (-x)")
+		usage()
+		os.Exit(1)
+	}
+
+	if err := generator.RunDiff(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "[!] Error: %v\n", err)
 		os.Exit(1)
 	}

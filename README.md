@@ -14,6 +14,7 @@ Generates targeted wordlists for cracking organisation-specific passwords. Given
 - **Bloom Filter Dedup**: Approximate duplicate removal at write time
 - **Configurable Data**: All symbols, words, leet map, years, etc. defined in `config.toml`
 - **Merge Mode**: Concatenate multiple wordlists into one file
+- **Diff Mode**: Strip words already covered by previously tested wordlists, in three memory/accuracy modes
 - **Streaming Architecture**: Memory-efficient chunked output
 - **Multithreaded**: Fan-out worker pool with configurable thread count
 
@@ -99,6 +100,59 @@ See `config.toml` for all available keys and their descriptions.
 ./wordlisttool merge list1.txt list2.txt -o combined.txt -y
 ```
 
+## Usage — Diff
+
+A wordlist is exhausted and the next one is going in. `diff` strips every word the previous wordlists already covered and writes what is left to a new file, in input order, so the next hashcat run does not repeat work.
+
+```bash
+# one exhausted list
+./wordlisttool diff new.txt -x rockyou.txt -o remaining.txt -v
+
+# several exhausted lists, several new ones
+./wordlisttool diff new1.txt new2.txt -x rockyou.txt -x run1.txt -x run2.txt -o remaining.txt -y
+
+# no collision risk, at the cost of holding the words themselves
+./wordlisttool diff new.txt -x tested.txt -mode full -v
+
+# cap memory on a very large tested corpus
+./wordlisttool diff huge.txt -x tested.txt -mode approx -mem 4096 -o remaining.txt -v
+```
+
+### Options
+
+```
+-x <file>      Previously tested wordlist (repeat for more)
+-o <file>      Output file (default: remaining.txt)
+-f             Overwrite the output file if it exists
+-y             Skip confirmation prompt
+-v             Show progress
+-keep-dupes    Keep repeats within the new wordlist(s)
+
+-mode <mode>   fingerprint (default), full, or approx
+-mem <MB>      Memory cap for -mode approx (default: 1024)
+-fpr <rate>    False-positive rate for -mode approx (default: 0.0001)
+```
+
+### Modes
+
+Comparison is byte-exact and case-sensitive; blank lines are skipped. Repeats within the new wordlists are dropped too, unless `-keep-dupes` is given.
+
+| Mode | Memory per unique word | Can drop an untested word |
+|------|------------------------|---------------------------|
+| `fingerprint` (default) | ~16 B | On a fingerprint collision |
+| `full` | ~16 B + the word | Never |
+| `approx` | capped by `-mem` | At the `-fpr` rate |
+
+The failure that matters here is dropping a candidate that was never tried, so the three modes differ only in how they risk it.
+
+`fingerprint` stores 63-bit hashes rather than words. Two distinct words sharing a hash costs you one untested candidate, at odds of roughly `n² / 2^64` — about 1 in a million at 4M unique words, 1 in 3,700 at 100M, and about 5% at 1B. The exact figure for your run is printed before anything is allocated.
+
+`full` keeps the words themselves in an arena and confirms every probe against the stored bytes, so no collision can drop anything. It costs the word bytes on top of the index and runs roughly 30% slower. Use it when the tested corpus is large enough that the collision odds stop being comfortable, or when a missed crack is expensive.
+
+`approx` is a bloom filter with a hard memory ceiling. At the default `-fpr 0.0001` it discards roughly 1 in 10,000 untested candidates; the run prints the effective rate and the expected loss up front. It is the fallback for when neither exact mode fits in RAM.
+
+Run it once with `-y` omitted: the plan table shows the estimated memory and the mode's risk before anything is allocated.
+
 ## Input Format
 
 One keyword per line:
@@ -142,8 +196,11 @@ transform/
 generator/
   pipeline.go      Multithreaded fan-out pipeline
   bloom.go         Bloom filter for deduplication
+  hashset.go       Fingerprint set — compact, small collision risk
+  wordset.go       Whole-word set — arena backed, no collision risk
   estimate.go      Dry-run candidate count estimation
   merge.go         Sequential wordlist merge
+  diff.go          Strip already-tested words from a new wordlist
 
 wordlists/
   data.go          TOML loader, exported variables
