@@ -26,15 +26,6 @@ func newBloom(expectedItems int64, fpr float64, maxMemoryMB int) *bloom {
 	n := float64(expectedItems)
 	m := uint64(math.Ceil(-n * math.Log(fpr) / (math.Ln2 * math.Ln2)))
 
-	// Optimal hash count: k = (m/n) * ln2
-	k := uint(math.Ceil(float64(m) / n * math.Ln2))
-	if k < 2 {
-		k = 2
-	}
-	if k > 16 {
-		k = 16
-	}
-
 	// Cap memory
 	maxBits := uint64(maxMemoryMB) * 1024 * 1024 * 8
 	if m > maxBits {
@@ -44,6 +35,17 @@ func newBloom(expectedItems int64, fpr float64, maxMemoryMB int) *bloom {
 	// Round up to multiple of 64
 	words := (m + 63) / 64
 	m = words * 64
+
+	// Optimal hash count: k = (m/n) * ln2, from the m actually allocated. Taken
+	// from the uncapped m instead, a capped filter gets more hashes than its
+	// bits can carry, which raises the false-positive rate it was capped to.
+	k := uint(math.Ceil(float64(m) / n * math.Ln2))
+	if k < 2 {
+		k = 2
+	}
+	if k > 16 {
+		k = 16
+	}
 
 	return &bloom{
 		bits: make([]uint64, words),
@@ -125,7 +127,7 @@ func (b *bloom) hash(s string) (uint64, uint64) {
 		h2 *= prime64 + 2
 	}
 
-	return h1, h2
+	return bloomMix(h1), bloomMix(h2) | 1
 }
 
 func (b *bloom) hashBytes(s []byte) (uint64, uint64) {
@@ -145,5 +147,18 @@ func (b *bloom) hashBytes(s []byte) (uint64, uint64) {
 		h2 *= prime64 + 2
 	}
 
-	return h1, h2
+	return bloomMix(h1), bloomMix(h2) | 1
+}
+
+// bloomMix is the murmur3 finaliser. FNV-1a avalanches its low bits poorly, and
+// the probe sequence (h1 + i*h2) reads exactly those, so unmixed hashes cluster
+// and push the real false-positive rate above the configured one. h2 is forced
+// odd so the sequence walks every word of the filter.
+func bloomMix(h uint64) uint64 {
+	h ^= h >> 33
+	h *= 0xff51afd7ed558ccd
+	h ^= h >> 33
+	h *= 0xc4ceb9fe1a85ec53
+	h ^= h >> 33
+	return h
 }

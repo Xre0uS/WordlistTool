@@ -11,8 +11,8 @@ Generates targeted wordlists for cracking organisation-specific passwords. Given
 - **Combination Chains**: Multi-stage transforms for deep candidates like `!@cm3Corp@2026#`
 - **3-Tier Presets**: `short` (fast), `standard` (balanced), `long` (thorough)
 - **Min-Length Filter**: Discard candidates shorter than a threshold (default: 8)
-- **Bloom Filter Dedup**: Approximate duplicate removal at write time
-- **Configurable Data**: All symbols, words, leet map, years, etc. defined in `config.toml`
+- **Dedup Modes**: Duplicate removal at write time — approximate (memory-capped) or exact
+- **Configurable Data**: All symbols, words, leet map, years, etc. defined in `config.toml`, and every list in it reaches the output
 - **Merge Mode**: Concatenate multiple wordlists into one file
 - **Diff Mode**: Strip words already covered by previously tested wordlists, in three memory/accuracy modes
 - **Streaming Architecture**: Memory-efficient chunked output
@@ -49,6 +49,10 @@ All generation data (symbols, words, leet substitutions, year ranges, keyboard w
 
 See `config.toml` for all available keys and their descriptions.
 
+An unknown key is an error rather than a silent omission, since a mistyped key would otherwise take its whole list out of the generated candidates. Empty or missing lists are reported on stderr for the same reason.
+
+Symbols and separators are tiered. `symbols` and `symbols_extended` both feed the direct append/prepend stages and are unioned; `symbols_compact` is the smaller set used where a stage multiplies out. Separators run in three tiers, each nested in the next: `separators` against the cheap lists (bare separator, digits, two-digit numbers, years), `separators_mid` against suffix and prefix words and number sequences, `separators_compact` against the three-digit range. Every separator in the config therefore appears in the output, and only the widest cross-products are restricted to the small set.
+
 ## Usage — Estimate
 
 ```bash
@@ -83,7 +87,20 @@ See `config.toml` for all available keys and their descriptions.
 -no-prepend       Disable prepend
 -no-combine       Disable combination chains
 -leet-max <n>     Max leet variants per word (0 = preset default)
+
+-dedupe <mode>    Duplicate removal: approx (default), fingerprint, full
+-dedupe-mem <MB>  Memory cap for -dedupe approx (default: 512)
 ```
+
+### Dedup modes
+
+| Mode | Memory | Behaviour |
+|---|---|---|
+| `approx` | capped by `-dedupe-mem` | Bloom filter. A false positive counts a unique candidate as a dupe and drops it; the run prints the rate and an upper bound on the loss |
+| `fingerprint` | ~16 B per unique candidate | 63-bit fingerprints, collision risk about n²/2⁶⁴ |
+| `full` | ~16 B plus the candidate itself | Whole candidates, nothing dropped |
+
+`approx` stays the default because a large run holds hundreds of millions of candidates. Watch the `Up to N unique candidates dropped as dupes` line: if it is not 0, raise `-dedupe-mem` or switch to `-dedupe fingerprint`.
 
 ### Presets
 

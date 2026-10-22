@@ -116,7 +116,14 @@ separators = [
   "?", "??",
 ]
 
-# Compact set for cross-product stages
+# Mid set — used in the mid-weight cross-product stages (three-digit numbers,
+# suffix/prefix words, number sequences)
+separators_mid = [
+  "", "_", "-", ".", "@", "#", "!", "&", "*", "+",
+  "__", "--", "..",
+]
+
+# Compact set for the heaviest cross-product stages
 separators_compact = ["", "_", "-", ".", "@", "#"]
 
 # ── Keyboard walks ───────────────────────────────────────────────────────────

@@ -50,10 +50,14 @@ func buildDefaultSuffixes() []string {
 	suffixes = append(suffixes, wordlists.CommonSuffixWords...)
 	suffixes = append(suffixes, wordlists.CommonPatterns...)
 
-	for _, sep := range wordlists.SeparatorsShort {
+	// Separators run in three tiers: the full set against the cheap lists, the
+	// mid set against the mid-weight ones, the compact set against the widest.
+	// Every separator in the config therefore reaches the output.
+	for _, sep := range wordlists.Separators {
 		if sep == "" {
 			continue
 		}
+		suffixes = append(suffixes, sep)
 		for _, y := range wordlists.Years {
 			suffixes = append(suffixes, sep+y)
 		}
@@ -63,14 +67,24 @@ func buildDefaultSuffixes() []string {
 		for _, d := range wordlists.TwoDigits {
 			suffixes = append(suffixes, sep+d)
 		}
-		for _, d := range wordlists.ThreeDigits {
-			suffixes = append(suffixes, sep+d)
+	}
+	for _, sep := range wordlists.SeparatorsMid {
+		if sep == "" {
+			continue
 		}
 		for _, w := range wordlists.CommonSuffixWords {
 			suffixes = append(suffixes, sep+w)
 		}
 		for _, ns := range wordlists.NumberSequences {
 			suffixes = append(suffixes, sep+ns)
+		}
+	}
+	for _, sep := range wordlists.SeparatorsShort {
+		if sep == "" {
+			continue
+		}
+		for _, d := range wordlists.ThreeDigits {
+			suffixes = append(suffixes, sep+d)
 		}
 	}
 

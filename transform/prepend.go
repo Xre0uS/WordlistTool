@@ -68,27 +68,39 @@ func buildDefaultPrefixes() []string {
 		}
 	}
 
-	for _, sep := range wordlists.SeparatorsShort {
+	// Same three separator tiers as the append side, cheapest list first.
+	for _, sep := range wordlists.Separators {
 		if sep == "" {
 			continue
 		}
-		for _, w := range wordlists.CommonPrefixWords {
-			prefixes = append(prefixes, w+sep)
-		}
+		prefixes = append(prefixes, sep)
 		for _, d := range wordlists.Digits {
 			prefixes = append(prefixes, d+sep)
 		}
 		for _, d := range wordlists.TwoDigits {
 			prefixes = append(prefixes, d+sep)
 		}
-		for _, d := range wordlists.ThreeDigits {
-			prefixes = append(prefixes, d+sep)
-		}
 		for _, y := range wordlists.Years {
 			prefixes = append(prefixes, y+sep)
 		}
+	}
+	for _, sep := range wordlists.SeparatorsMid {
+		if sep == "" {
+			continue
+		}
+		for _, w := range wordlists.CommonPrefixWords {
+			prefixes = append(prefixes, w+sep)
+		}
 		for _, ns := range wordlists.NumberSequences {
 			prefixes = append(prefixes, ns+sep)
+		}
+	}
+	for _, sep := range wordlists.SeparatorsShort {
+		if sep == "" {
+			continue
+		}
+		for _, d := range wordlists.ThreeDigits {
+			prefixes = append(prefixes, d+sep)
 		}
 	}
 

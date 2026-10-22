@@ -73,6 +73,11 @@ func printUsage() {
   -no-combine       Disable combination chains
   -leet-max <n>     Max leet variants per word (0 = preset default)
 
+  -dedupe <mode>    Duplicate removal: approx (default), fingerprint, full
+                    approx is memory-capped but drops a few unique candidates
+                    as false dupes; the other two drop none
+  -dedupe-mem <MB>  Memory cap for -dedupe approx (default: 512)
+
 ━━━ Merge ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   wordlisttool merge <file1> <file2> [file3 ...] [options]
 
@@ -400,6 +405,12 @@ func runGenerate(args []string) {
 		os.Exit(1)
 	}
 
+	dedupe, err := generator.ParseDiffMode(cfg.DedupeMode)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[!] Error: -dedupe: %v\n", err)
+		os.Exit(1)
+	}
+
 	loadConfig(cfg.ConfigFile)
 
 	transformers := buildTransformers(cfg)
@@ -410,6 +421,7 @@ func runGenerate(args []string) {
 	}
 
 	pipeline := generator.NewPipeline(cfg, transformers)
+	pipeline.Dedupe = dedupe
 	if err := pipeline.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "[!] Error: %v\n", err)
 		os.Exit(1)

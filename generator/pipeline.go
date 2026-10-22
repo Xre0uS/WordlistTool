@@ -12,10 +12,20 @@ import (
 	"github.com/Xre0uS/wordlisttool/transform"
 )
 
+// DefaultDedupeMemMB caps the approximate dedupe filter when -dedupe-mem is unset.
+const DefaultDedupeMemMB = 512
+
 // Pipeline orchestrates multithreaded wordlist generation.
 type Pipeline struct {
 	cfg          *config.Config
 	transformers []transform.Transformer
+
+	// Dedupe selects the structure behind duplicate removal, as -mode does for
+	// diff. Approx is memory-bounded but counts a few unique candidates as
+	// dupes and drops them; fingerprint and full do not.
+	Dedupe DiffMode
+
+	dedupeNote string // written by writeOutput, printed by Run
 }
 
 // NewPipeline creates a generation pipeline with the given config and transformers.
@@ -131,6 +141,9 @@ func (p *Pipeline) Run() error {
 	fmt.Fprintf(os.Stderr, "[+] Complete in %s\n", elapsed.Round(time.Millisecond))
 	fmt.Fprintf(os.Stderr, "[+] Generated: %s | Dupes removed: %s\n",
 		commaFmt(atomic.LoadInt64(&totalGenerated)), commaFmt(atomic.LoadInt64(&totalDupes)))
+	if p.dedupeNote != "" {
+		fmt.Fprint(os.Stderr, p.dedupeNote)
+	}
 	fmt.Fprintf(os.Stderr, "[+] Candidates written: %s\n", commaFmt(atomic.LoadInt64(&totalWritten)))
 	if info, err := os.Stat(p.cfg.OutputFile); err == nil {
 		fmt.Fprintf(os.Stderr, "[+] Output: %s (%s)\n", p.cfg.OutputFile, humanSize(info.Size()))
@@ -153,12 +166,48 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, tot
 
 	minLen := p.cfg.MinLength
 
-	var expectedItems int64 = 200_000_000
-	if p.cfg.MaxCandidates > 0 && p.cfg.MaxCandidates < expectedItems {
-		expectedItems = p.cfg.MaxCandidates
+	// Expected unique candidates. Unknown unless -max bounds the run, so the
+	// exact structures start small and grow, while the bloom filter has to be
+	// sized up front and assumes a large run.
+	expected := p.cfg.MaxCandidates
+
+	var isDupe func(string) bool
+	var bf *bloom
+	memMB := p.cfg.DedupeMemMB
+
+	switch p.Dedupe {
+	case DiffFull:
+		if expected <= 0 {
+			expected = 1_000_000
+		}
+		words := newWordSet(expected)
+		isDupe = func(c string) bool {
+			present, _ := words.Insert([]byte(c), false)
+			return present
+		}
+		fmt.Fprintln(os.Stderr, "[*] Dedupe: full (whole words, no candidate lost)")
+	case DiffFingerprint:
+		if expected <= 0 {
+			expected = 1_000_000
+		}
+		set := newHashSet(expected)
+		isDupe = func(c string) bool {
+			present, _ := set.Insert(fingerprint63String(c), false)
+			return present
+		}
+		fmt.Fprintln(os.Stderr, "[*] Dedupe: fingerprint (63-bit, small collision risk)")
+	default:
+		expectedBloom := int64(200_000_000)
+		if expected > 0 && expected < expectedBloom {
+			expectedBloom = expected
+		}
+		if memMB < 1 {
+			memMB = DefaultDedupeMemMB
+		}
+		bf = newBloom(expectedBloom, 0.001, memMB)
+		isDupe = bf.TestAndAdd
+		fmt.Fprintf(os.Stderr, "[*] Dedupe: approx (bloom, %d MB)\n", bf.memoryMB())
 	}
-	bf := newBloom(expectedItems, 0.001, 512)
-	fmt.Fprintf(os.Stderr, "[*] Bloom filter: %d MB\n", bf.memoryMB())
 
 	for batch := range batches {
 		var written int64
@@ -167,7 +216,7 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, tot
 			if minLen > 0 && len(candidate) < minLen {
 				continue
 			}
-			if bf.TestAndAdd(candidate) {
+			if isDupe(candidate) {
 				dupes++
 				continue
 			}
@@ -179,7 +228,25 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, tot
 		atomic.AddInt64(totalDupes, dupes)
 	}
 
+	if bf != nil {
+		p.dedupeNote = bloomLossNote(bf, memMB, atomic.LoadInt64(totalWritten), atomic.LoadInt64(totalDupes))
+	}
+
 	return nil
+}
+
+// bloomLossNote reports what the approximate filter cost in coverage: every
+// false positive is a unique candidate counted as a dupe and never written.
+func bloomLossNote(bf *bloom, memMB int, written, dupes int64) string {
+	fpr := bf.fpr(written)
+	lost := fpr * float64(written+dupes)
+
+	line := fmt.Sprintf("[+] Dedupe: approx | Filter: %s | FPR: %.2g | Up to %s unique candidates dropped as dupes\n",
+		humanSize(bf.memoryBytes()), fpr, commaFmt(int64(lost)))
+	if lost < 1 {
+		return line
+	}
+	return line + fmt.Sprintf("[!] To keep them: -dedupe fingerprint, or raise -dedupe-mem (now %d MB)\n", memMB)
 }
 
 func ReadKeywords(filename string) ([]string, error) {

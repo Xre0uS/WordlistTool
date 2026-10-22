@@ -32,6 +32,32 @@ func fingerprint63(b []byte) uint64 {
 	return h
 }
 
+// fingerprint63String is fingerprint63 for a string, skipping the byte copy.
+func fingerprint63String(s string) uint64 {
+	const (
+		offset64 = 14695981039346656037
+		prime64  = 1099511628211
+	)
+
+	h := uint64(offset64)
+	for i := 0; i < len(s); i++ {
+		h ^= uint64(s[i])
+		h *= prime64
+	}
+
+	h ^= h >> 33
+	h *= 0xff51afd7ed558ccd
+	h ^= h >> 33
+	h *= 0xc4ceb9fe1a85ec53
+	h ^= h >> 33
+
+	h &= hsFPMask
+	if h == 0 {
+		h = 1
+	}
+	return h
+}
+
 // hashSet is an open-addressing set of 63-bit fingerprints, each carrying one
 // flag bit; a slot of 0 means empty. Fingerprints rather than words keeps this
 // to 8 bytes per slot, at a collision risk of about n^2 / 2^64 — roughly 1 in

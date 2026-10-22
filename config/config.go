@@ -46,6 +46,9 @@ type Config struct {
 	LeetMax       int
 	MaxCandidates int64
 	Verbose       bool
+
+	DedupeMode  string // fingerprint, full or approx — parsed by the caller
+	DedupeMemMB int    // memory cap for the approx filter
 }
 
 func Parse(args []string) (*Config, error) {
@@ -68,6 +71,8 @@ func Parse(args []string) (*Config, error) {
 	fs.BoolVar(&noPrependFlag, "no-prepend", false, "")
 	fs.BoolVar(&noCombineFlag, "no-combine", false, "")
 	fs.IntVar(&cfg.LeetMax, "leet-max", 0, "")
+	fs.StringVar(&cfg.DedupeMode, "dedupe", "approx", "")
+	fs.IntVar(&cfg.DedupeMemMB, "dedupe-mem", 512, "")
 	fs.BoolVar(&cfg.Verbose, "v", false, "")
 
 	fs.Usage = func() {
@@ -88,13 +93,18 @@ Options:
   -no-prepend       Disable prepend
   -no-combine       Disable combination chains
   -leet-max <n>     Max leet variants per word (0 = preset default)
+
+  -dedupe <mode>    Duplicate removal: approx (default), fingerprint, full
+                    approx is memory-capped but drops a few unique candidates
+                    as false dupes; the other two drop none
+  -dedupe-mem <MB>  Memory cap for -dedupe approx (default: 512)
 `, runtime.NumCPU())
 	}
 
 	valueFlags := map[string]bool{
 		"-o": true, "-t": true, "-preset": true,
 		"-min-length": true, "-max": true, "-leet-max": true,
-		"-config": true,
+		"-config": true, "-dedupe": true, "-dedupe-mem": true,
 	}
 	var flagArgs []string
 	var positional []string
