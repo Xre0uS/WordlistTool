@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Xre0uS/wordlisttool/transform"
+	"git.xreous.io/xreous/WordlistTool/transform"
 )
 
 type EstimateResult struct {

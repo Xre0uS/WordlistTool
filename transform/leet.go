@@ -1,7 +1,7 @@
 package transform
 
 import (
-	"github.com/Xre0uS/wordlisttool/wordlists"
+	"git.xreous.io/xreous/WordlistTool/wordlists"
 )
 
 // LeetTransformer generates l33t speak variations with prioritised substitution.

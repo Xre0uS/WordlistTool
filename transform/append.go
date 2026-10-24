@@ -1,7 +1,7 @@
 package transform
 
 import (
-	"github.com/Xre0uS/wordlisttool/wordlists"
+	"git.xreous.io/xreous/WordlistTool/wordlists"
 )
 
 // AppendTransformer appends suffixes to inputs. Uses built-in defaults when Suffixes is nil.

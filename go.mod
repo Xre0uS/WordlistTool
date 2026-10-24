@@ -1,4 +1,4 @@
-module github.com/Xre0uS/wordlisttool
+module git.xreous.io/xreous/WordlistTool
 
 go 1.25.4
 

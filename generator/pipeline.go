@@ -8,8 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/Xre0uS/wordlisttool/config"
-	"github.com/Xre0uS/wordlisttool/transform"
+	"git.xreous.io/xreous/WordlistTool/config"
+	"git.xreous.io/xreous/WordlistTool/transform"
 )
 
 // DefaultDedupeMemMB caps the approximate dedupe filter when -dedupe-mem is unset.

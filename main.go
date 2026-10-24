@@ -6,10 +6,10 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/Xre0uS/wordlisttool/config"
-	"github.com/Xre0uS/wordlisttool/generator"
-	"github.com/Xre0uS/wordlisttool/transform"
-	"github.com/Xre0uS/wordlisttool/wordlists"
+	"git.xreous.io/xreous/WordlistTool/config"
+	"git.xreous.io/xreous/WordlistTool/generator"
+	"git.xreous.io/xreous/WordlistTool/transform"
+	"git.xreous.io/xreous/WordlistTool/wordlists"
 )
 
 const defaultConfigFile = "config.toml"

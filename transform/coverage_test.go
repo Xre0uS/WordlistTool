@@ -3,7 +3,7 @@ package transform
 import (
 	"testing"
 
-	"github.com/Xre0uS/wordlisttool/wordlists"
+	"git.xreous.io/xreous/WordlistTool/wordlists"
 )
 
 // Every token in the config must reach the output somewhere. A list the config

@@ -22,7 +22,7 @@ Generates targeted wordlists for cracking organisation-specific passwords. Given
 
 ### Pre-built binaries
 
-Download from [GitHub Releases](https://github.com/Xre0uS/wordlisttool/releases):
+Download from [Releases](https://git.xreous.io/xreous/WordlistTool/releases):
 
 | Platform | File |
 |----------|------|

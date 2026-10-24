@@ -1,7 +1,7 @@
 package transform
 
 import (
-	"github.com/Xre0uS/wordlisttool/wordlists"
+	"git.xreous.io/xreous/WordlistTool/wordlists"
 )
 
 // PrependTransformer prepends prefixes to inputs. Uses built-in defaults when Prefixes is nil.
