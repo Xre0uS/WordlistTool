@@ -102,6 +102,11 @@ func printUsage() {
   -mem <MB>         Memory cap for -mode approx (default: 1024)
   -fpr <rate>       False-positive rate for -mode approx (default: 0.0001)
 
+  -sorted           Take the merge-join fast path for one new wordlist:
+                    exact, constant memory, needs the input and every -x
+                    file sorted in byte order (LC_ALL=C)
+  -no-sorted        Never take the fast path
+
 ━━━ Examples ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   wordlisttool estimate keywords.txt
   wordlisttool generate keywords.txt -o wordlist.txt -preset long -v
@@ -109,6 +114,7 @@ func printUsage() {
   wordlisttool merge list1.txt list2.txt list3.txt -o combined.txt
   wordlisttool diff new.txt -x rockyou.txt -x run1.txt -o remaining.txt -v
   wordlisttool diff big.txt -x tested.txt -mode approx -mem 2048 -y
+  wordlisttool diff new.txt -x tested.txt -sorted -y
 `)
 }
 
@@ -309,11 +315,24 @@ Options:
   -mem <MB>      Memory cap for -mode approx (default: 1024)
   -fpr <rate>    False-positive rate for -mode approx (default: 0.0001)
 
+  -sorted        Take the merge-join fast path, instead of a filter: the
+                 exact difference of one new wordlist and the -x files,
+                 streamed in constant memory. Needs the input and every
+                 -x file sorted in byte order (LC_ALL=C); a file sorted
+                 under another locale is not sorted for this purpose.
+                 The order required is the order of words after a trailing
+                 CR is stripped, so a file with CR-terminated lines may need
+                 them removed first.
+                 By default the heads are probed and the path is taken
+                 only when every sample is sorted; use -no-sorted to
+                 forbid it and fall back to -mode.
+
 Examples:
   wordlisttool diff new.txt -x rockyou.txt -o remaining.txt -v
   wordlisttool diff new1.txt new2.txt -x run1.txt -x run2.txt -y
   wordlisttool diff new.txt -x tested.txt -mode full -v
   wordlisttool diff huge.txt -x tested.txt -mode approx -mem 2048
+  wordlisttool diff new.txt -x tested.txt -sorted -y
 `)
 	}
 
@@ -360,6 +379,10 @@ Examples:
 				os.Exit(1)
 			}
 			cfg.Mode = mode
+		case "-sorted":
+			cfg.Sorted = generator.SortedForce
+		case "-no-sorted":
+			cfg.Sorted = generator.SortedOff
 		case "-keep-dupes":
 			cfg.KeepDupes = true
 		case "-f":
