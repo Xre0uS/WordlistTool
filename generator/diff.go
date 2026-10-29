@@ -70,7 +70,8 @@ type DiffConfig struct {
 	Verbose      bool
 
 	Mode       DiffMode
-	MemLimitMB int     // memory cap for approx mode
+	MemLimitMB int     // memory ceiling for the run, 0 to derive it from free memory
+	NoMemCap   bool    // plan without a ceiling at all
 	FPR        float64 // target false-positive rate for approx mode
 
 	Sorted    DiffSorted // merge-join fast path: auto, force, or off
@@ -117,6 +118,19 @@ func (d *diffFilter) check(line []byte, record bool) (present, wasEmitted bool) 
 		}
 		return d.bf.TestBytes(line), false
 	}
+}
+
+// err reports the memory ceiling having stopped the structure. Once it is set
+// nothing more is stored, so the run has to abort rather than carry on and
+// report untested words as tested.
+func (d *diffFilter) err() error {
+	switch {
+	case d.set != nil:
+		return d.set.Err()
+	case d.words != nil:
+		return d.words.Err()
+	}
+	return nil
 }
 
 // len reports unique words held, or -1 if the structure cannot count them.
@@ -202,6 +216,11 @@ func RunDiff(cfg *DiffConfig) error {
 		return runDiffMerge(cfg, inputs[0], excludes)
 	}
 
+	budget := newMemBudget(cfg.MemLimitMB, "-mem")
+	if cfg.NoMemCap {
+		budget = uncappedBudget("-mem")
+	}
+
 	var bf *bloom
 	switch cfg.Mode {
 	case DiffApprox:
@@ -209,9 +228,12 @@ func RunDiff(cfg *DiffConfig) error {
 		if fpr <= 0 || fpr >= 1 {
 			fpr = 0.0001
 		}
+		// Approx is the mode that sizes itself to a number rather than to the
+		// data, so it keeps its own default and only has to stay under the
+		// ceiling.
 		memMB := cfg.MemLimitMB
 		if memMB < 1 {
-			memMB = 1024
+			memMB = budget.clampMB(1024)
 		}
 		bf = newBloom(totalEst, fpr, memMB)
 
@@ -229,15 +251,19 @@ func RunDiff(cfg *DiffConfig) error {
 			arenaEst += inputBytes
 		}
 		estBytes := wordSetBytesFor(totalEst, arenaEst)
-		fmt.Fprintf(os.Stderr, "[*] Mode: full (whole words, no collision risk) | Estimated memory: %s\n",
-			humanSize(estBytes))
-		warnLargeSet(estBytes)
+		fmt.Fprintf(os.Stderr, "[*] Mode: full (whole words, no collision risk) | Estimated memory: %s | Budget: %s\n",
+			humanSize(estBytes), budget.describe())
+		if err := refuseOverBudget(cfg, budget, estBytes); err != nil {
+			return err
+		}
 
 	default:
 		estBytes := int64(hashSetSlotsFor(totalEst)) * 8
-		fmt.Fprintf(os.Stderr, "[*] Mode: fingerprint (63-bit) | Estimated memory: %s | Collision risk: %s\n",
-			humanSize(estBytes), collisionOdds(totalEst))
-		warnLargeSet(estBytes)
+		fmt.Fprintf(os.Stderr, "[*] Mode: fingerprint (63-bit) | Estimated memory: %s | Budget: %s | Collision risk: %s\n",
+			humanSize(estBytes), budget.describe(), collisionOdds(totalEst))
+		if err := refuseOverBudget(cfg, budget, estBytes); err != nil {
+			return err
+		}
 	}
 	fmt.Fprintln(os.Stderr)
 
@@ -245,7 +271,27 @@ func RunDiff(cfg *DiffConfig) error {
 		return nil
 	}
 
-	return runDiffFilter(cfg, inputs, excludes, totalEst, bf)
+	return runDiffFilter(cfg, inputs, excludes, totalEst, bf, budget)
+}
+
+// refuseOverBudget stops a run that would not fit before it allocates anything,
+// and names the ways out. Planning past the ceiling is how the tool ends up
+// killing something else on the machine.
+func refuseOverBudget(cfg *DiffConfig, budget memBudget, planned int64) error {
+	if !budget.exceeded(planned) {
+		return nil
+	}
+
+	fmt.Fprintf(os.Stderr, "[!] %s\n", budget.refusal(planned))
+	fmt.Fprintln(os.Stderr, "    Ways forward:")
+	if len(cfg.InputFiles) == 1 && cfg.Sorted != SortedOff {
+		fmt.Fprintln(os.Stderr, "      - sort the inputs in byte order and rerun: the merge-join path is exact")
+		fmt.Fprintln(os.Stderr, "        and runs in a few MB (LC_ALL=C sort -u <file>)")
+	}
+	fmt.Fprintln(os.Stderr, "      - -mode approx -mem <MB>: capped, but drops untested candidates at the -fpr rate")
+	fmt.Fprintln(os.Stderr, "      - -mem <MB> to raise the ceiling, or -no-mem-cap to plan without one")
+
+	return fmt.Errorf("memory budget exceeded")
 }
 
 // diffPreflight checks the arguments and the output destination, before
@@ -299,17 +345,22 @@ func diffConfirm(cfg *DiffConfig) bool {
 }
 
 // runDiffFilter runs the three modes behind their membership structure.
-func runDiffFilter(cfg *DiffConfig, inputs, excludes []diffFileStat, totalEst int64, bf *bloom) error {
+func runDiffFilter(cfg *DiffConfig, inputs, excludes []diffFileStat, totalEst int64, bf *bloom, budget memBudget) error {
 	start := time.Now()
 
+	// The estimate sizes the set, so an estimate that came in low grows it
+	// mid-run. The ceiling goes on the set itself to catch that: it stops and
+	// the run aborts, rather than the machine running out.
 	var filter diffFilter
 	switch cfg.Mode {
 	case DiffApprox:
 		filter.bf = bf
 	case DiffFull:
 		filter.words = newWordSet(totalEst)
+		filter.words.SetLimit(budget.limit)
 	default:
 		filter.set = newHashSet(totalEst)
+		filter.set.SetLimit(budget.limit)
 	}
 
 	var loaded, loadDupes int64
@@ -325,11 +376,14 @@ func runDiffFilter(cfg *DiffConfig, inputs, excludes []diffFileStat, totalEst in
 				return nil
 			}
 			filter.load(line)
+			if err := filter.err(); err != nil {
+				return err
+			}
 			loaded++
 			return nil
 		})
 		if err != nil {
-			return err
+			return fmt.Errorf("loading %s: %w", f.path, err)
 		}
 	}
 	fmt.Fprint(os.Stderr, "\r                                                             \r")
@@ -392,6 +446,9 @@ func runDiffFilter(cfg *DiffConfig, inputs, excludes []diffFileStat, totalEst in
 			}
 
 			present, wasEmitted := filter.check(line, record)
+			if err := filter.err(); err != nil {
+				return err
+			}
 			if present {
 				if wasEmitted {
 					f.dupes++
@@ -421,7 +478,7 @@ func runDiffFilter(cfg *DiffConfig, inputs, excludes []diffFileStat, totalEst in
 			return nil
 		})
 		if err != nil {
-			return err
+			return diffFilterAbort(cfg, outFile, stopProgress, err)
 		}
 		atomic.StoreInt64(&progRead, read)
 		atomic.StoreInt64(&progWritten, written)
@@ -433,6 +490,16 @@ func runDiffFilter(cfg *DiffConfig, inputs, excludes []diffFileStat, totalEst in
 	close(stopProgress)
 
 	return diffReport(cfg, inputs, start, read, tested, dupes, written, blank)
+}
+
+// diffFilterAbort drops the partial output on the way out: a truncated
+// remaining.txt reads exactly like a finished one, and working from it would
+// skip words that were never tested.
+func diffFilterAbort(cfg *DiffConfig, outFile *os.File, stopProgress chan struct{}, err error) error {
+	close(stopProgress)
+	outFile.Close()
+	os.Remove(cfg.OutputFile)
+	return err
 }
 
 // diffReport prints the shared summary: timing, the counters, the reduction,
@@ -482,12 +549,6 @@ func diffReport(cfg *DiffConfig, inputs []diffFileStat, start time.Time, read, t
 	}
 
 	return nil
-}
-
-func warnLargeSet(estBytes int64) {
-	if estBytes > 4*1024*1024*1024 {
-		fmt.Fprintln(os.Stderr, "[!] Large working set. Use -mode approx -mem <MB> to cap memory at the cost of accuracy.")
-	}
 }
 
 // collisionOdds is the chance any two of n words share a fingerprint.

@@ -1,5 +1,7 @@
 package generator
 
+import "fmt"
+
 const (
 	hsFlagBit = uint64(1) << 63
 	hsFPMask  = hsFlagBit - 1
@@ -67,7 +69,19 @@ type hashSet struct {
 	mask   uint64
 	count  int64
 	growAt int64
+
+	limit int64 // memory ceiling, 0 for none
+	err   error // set once the ceiling refuses a grow
 }
+
+// SetLimit caps the table's memory. Growing past the cap would take the machine
+// with it, so the set stops and the caller aborts the run instead; carrying on
+// would mean dropping words, which silently corrupts a diff.
+func (h *hashSet) SetLimit(limit int64) { h.limit = limit }
+
+// Err reports the ceiling being hit. A caller that inserts must check it and
+// abort, because Insert stops storing once it is set.
+func (h *hashSet) Err() error { return h.err }
 
 // hashSetSlotsFor returns the slots newHashSet allocates, load factor <= 0.5.
 func hashSetSlotsFor(expected int64) uint64 {
@@ -114,6 +128,10 @@ func (h *hashSet) Lookup(fp uint64) (present, flag bool) {
 // Insert adds fp with the given flag unless present, returning whether it was
 // present and the flag of the entry already there.
 func (h *hashSet) Insert(fp uint64, flag bool) (present, existingFlag bool) {
+	if h.err != nil {
+		return false, false
+	}
+
 	idx := fp & h.mask
 	for {
 		cur := h.slots[idx]
@@ -139,6 +157,14 @@ func (h *hashSet) Insert(fp uint64, flag bool) (present, existingFlag bool) {
 // grow doubles the table. Peak memory is three times the old one, so size the
 // set up front.
 func (h *hashSet) grow() {
+	// Both tables are live while the entries move across, so the peak is three
+	// times the one in hand.
+	if cur := int64(len(h.slots)) * 8; h.limit > 0 && cur*3 > h.limit {
+		h.err = fmt.Errorf("fingerprint set holding %s words needs %s to grow, over the %s cap",
+			commaFmt(h.count), humanSize(cur*3), humanSize(h.limit))
+		return
+	}
+
 	old := h.slots
 	n := uint64(len(old)) * 2
 

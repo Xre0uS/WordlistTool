@@ -172,8 +172,17 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, tot
 	expected := p.cfg.MaxCandidates
 
 	var isDupe func(string) bool
+	var dedupeErr func() error
 	var bf *bloom
 	memMB := p.cfg.DedupeMemMB
+
+	// Without -max the exact structures size themselves at a guess and grow
+	// with the run, so the ceiling is the only thing between a long generate
+	// and an out-of-memory kill.
+	budget := newMemBudget(p.cfg.DedupeMemMB, "-dedupe-mem")
+	if p.cfg.NoMemCap {
+		budget = uncappedBudget("-dedupe-mem")
+	}
 
 	switch p.Dedupe {
 	case DiffFull:
@@ -181,28 +190,34 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, tot
 			expected = 1_000_000
 		}
 		words := newWordSet(expected)
+		words.SetLimit(budget.limit)
 		isDupe = func(c string) bool {
 			present, _ := words.Insert([]byte(c), false)
 			return present
 		}
-		fmt.Fprintln(os.Stderr, "[*] Dedupe: full (whole words, no candidate lost)")
+		dedupeErr = words.Err
+		fmt.Fprintf(os.Stderr, "[*] Dedupe: full (whole words, no candidate lost) | Budget: %s\n",
+			budget.describe())
 	case DiffFingerprint:
 		if expected <= 0 {
 			expected = 1_000_000
 		}
 		set := newHashSet(expected)
+		set.SetLimit(budget.limit)
 		isDupe = func(c string) bool {
 			present, _ := set.Insert(fingerprint63String(c), false)
 			return present
 		}
-		fmt.Fprintln(os.Stderr, "[*] Dedupe: fingerprint (63-bit, small collision risk)")
+		dedupeErr = set.Err
+		fmt.Fprintf(os.Stderr, "[*] Dedupe: fingerprint (63-bit, small collision risk) | Budget: %s\n",
+			budget.describe())
 	default:
 		expectedBloom := int64(200_000_000)
 		if expected > 0 && expected < expectedBloom {
 			expectedBloom = expected
 		}
 		if memMB < 1 {
-			memMB = DefaultDedupeMemMB
+			memMB = budget.clampMB(DefaultDedupeMemMB)
 		}
 		bf = newBloom(expectedBloom, 0.001, memMB)
 		isDupe = bf.TestAndAdd
@@ -226,6 +241,16 @@ func (p *Pipeline) writeOutput(batches <-chan []string, totalWritten *int64, tot
 		}
 		atomic.AddInt64(totalWritten, written)
 		atomic.AddInt64(totalDupes, dupes)
+
+		// Checked per batch rather than per candidate: once the ceiling stops
+		// the set it stores nothing more, so every later candidate would read
+		// as new and the output would fill with duplicates.
+		if dedupeErr != nil {
+			if err := dedupeErr(); err != nil {
+				writer.Flush()
+				return fmt.Errorf("%w (raise -dedupe-mem, use -dedupe approx, or -no-mem-cap)", err)
+			}
+		}
 	}
 
 	if bf != nil {

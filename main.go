@@ -99,7 +99,8 @@ func printUsage() {
   -keep-dupes       Keep repeats within the new wordlist(s)
 
   -mode <mode>      fingerprint (default), full, or approx — see -h
-  -mem <MB>         Memory cap for -mode approx (default: 1024)
+  -mem <MB>         Memory ceiling for the run (default: 75%% of free memory)
+  -no-mem-cap       Plan without a memory ceiling
   -fpr <rate>       False-positive rate for -mode approx (default: 0.0001)
 
   -sorted           Take the merge-join fast path for one new wordlist:
@@ -287,7 +288,6 @@ Options:
 func runDiff(args []string) {
 	cfg := &generator.DiffConfig{
 		OutputFile: "remaining.txt",
-		MemLimitMB: 1024,
 		FPR:        0.0001,
 	}
 
@@ -312,7 +312,11 @@ Options:
                               the word itself
                  approx       bloom filter, memory capped by -mem, drops
                               untested words at the -fpr rate
-  -mem <MB>      Memory cap for -mode approx (default: 1024)
+  -mem <MB>      Memory ceiling for the run. Unset, it is 75%% of the memory
+                 free at the time, and a mode that would plan past it is
+                 refused before it allocates. approx sizes its filter to this
+                 (1024 MB when unset and there is room)
+  -no-mem-cap    Plan without a ceiling
   -fpr <rate>    False-positive rate for -mode approx (default: 0.0001)
 
   -sorted        Take the merge-join fast path, instead of a filter: the
@@ -383,6 +387,8 @@ Examples:
 			cfg.Sorted = generator.SortedForce
 		case "-no-sorted":
 			cfg.Sorted = generator.SortedOff
+		case "-no-mem-cap":
+			cfg.NoMemCap = true
 		case "-keep-dupes":
 			cfg.KeepDupes = true
 		case "-f":

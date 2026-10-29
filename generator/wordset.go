@@ -3,6 +3,7 @@ package generator
 import (
 	"bytes"
 	"encoding/binary"
+	"fmt"
 )
 
 const (
@@ -33,7 +34,19 @@ type wordSet struct {
 	off        int // write offset within it
 	nextSize   int
 	arenaBytes int64
+
+	limit int64 // memory ceiling over index and arena together, 0 for none
+	err   error // set once the ceiling refuses an allocation
 }
+
+// SetLimit caps the index and the arena together. Past the cap the set stops
+// and the caller aborts the run, rather than dropping words and quietly
+// corrupting a diff.
+func (w *wordSet) SetLimit(limit int64) { w.limit = limit }
+
+// Err reports the ceiling being hit. A caller that inserts must check it and
+// abort, because Insert stops storing once it is set.
+func (w *wordSet) Err() error { return w.err }
 
 // wordSetBytesFor estimates memory for expected words over arenaBytes of data.
 func wordSetBytesFor(expected, arenaBytes int64) int64 {
@@ -72,6 +85,10 @@ func (w *wordSet) Lookup(word []byte) (present, flag bool) {
 // Insert adds word with the given flag unless present, returning whether it was
 // present and the flag of the entry already there.
 func (w *wordSet) Insert(word []byte, flag bool) (present, existingFlag bool) {
+	if w.err != nil {
+		return false, false
+	}
+
 	h := fingerprint63(word)
 	tag := (h >> 49) & 0x7f
 	idx := h & w.mask
@@ -79,7 +96,11 @@ func (w *wordSet) Insert(word []byte, flag bool) (present, existingFlag bool) {
 	for {
 		cur := w.slots[idx]
 		if cur == 0 {
-			v := (uint64(w.store(word))+1)&wsPosMask | tag<<wsTagShift
+			pos, ok := w.store(word)
+			if !ok {
+				return false, false
+			}
+			v := (uint64(pos)+1)&wsPosMask | tag<<wsTagShift
 			if flag {
 				v |= wsFlagBit
 			}
@@ -97,14 +118,17 @@ func (w *wordSet) Insert(word []byte, flag bool) (present, existingFlag bool) {
 	}
 }
 
-// store appends word to the arena and returns its logical position.
-func (w *wordSet) store(word []byte) int64 {
+// store appends word to the arena and returns its logical position. It reports
+// false when the arena cannot be extended within the limit.
+func (w *wordSet) store(word []byte) (int64, bool) {
 	var hdr [binary.MaxVarintLen64]byte
 	hn := binary.PutUvarint(hdr[:], uint64(len(word)))
 	need := hn + len(word)
 
 	if w.cur < 0 || w.off+need > len(w.chunks[w.cur]) {
-		w.newChunk(need)
+		if !w.newChunk(need) {
+			return 0, false
+		}
 	}
 
 	pos := int64(w.cur)<<wsChunkBits + int64(w.off)
@@ -119,16 +143,23 @@ func (w *wordSet) store(word []byte) int64 {
 		w.off = len(c)
 	}
 
-	return pos
+	return pos, true
 }
 
 // newChunk ramps from wsFirstChunk up to wsChunkSize, so a small run does not
-// pay for a full chunk.
-func (w *wordSet) newChunk(need int) {
+// pay for a full chunk. It reports false when the chunk would cross the limit.
+func (w *wordSet) newChunk(need int) bool {
 	size := w.nextSize
 	if need > size {
 		size = need
 	}
+
+	if w.limit > 0 && w.memoryBytes()+int64(size) > w.limit {
+		w.err = fmt.Errorf("word set holding %s words needs another %s of arena, over the %s cap",
+			commaFmt(w.count), humanSize(int64(size)), humanSize(w.limit))
+		return false
+	}
+
 	if w.nextSize < wsChunkSize {
 		w.nextSize *= 2
 	}
@@ -136,6 +167,7 @@ func (w *wordSet) newChunk(need int) {
 	w.cur = len(w.chunks) - 1
 	w.off = 0
 	w.arenaBytes += int64(size)
+	return true
 }
 
 // wordAt returns the word a slot points at, aliasing the arena.
@@ -150,6 +182,14 @@ func (w *wordSet) wordAt(slot uint64) []byte {
 
 // grow doubles the index, rehashing each word out of the arena.
 func (w *wordSet) grow() {
+	// Both indexes are live while the entries move across, so the peak is three
+	// times the one in hand, on top of the arena.
+	if cur := int64(len(w.slots)) * 8; w.limit > 0 && cur*3+w.arenaBytes > w.limit {
+		w.err = fmt.Errorf("word set holding %s words needs %s to grow its index, over the %s cap",
+			commaFmt(w.count), humanSize(cur*3+w.arenaBytes), humanSize(w.limit))
+		return
+	}
+
 	old := w.slots
 	n := uint64(len(old)) * 2
 

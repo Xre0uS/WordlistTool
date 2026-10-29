@@ -48,7 +48,8 @@ type Config struct {
 	Verbose       bool
 
 	DedupeMode  string // fingerprint, full or approx — parsed by the caller
-	DedupeMemMB int    // memory cap for the approx filter
+	DedupeMemMB int    // memory ceiling for the dedupe structure, 0 to derive it
+	NoMemCap    bool   // dedupe without a ceiling at all
 }
 
 func Parse(args []string) (*Config, error) {
@@ -72,7 +73,8 @@ func Parse(args []string) (*Config, error) {
 	fs.BoolVar(&noCombineFlag, "no-combine", false, "")
 	fs.IntVar(&cfg.LeetMax, "leet-max", 0, "")
 	fs.StringVar(&cfg.DedupeMode, "dedupe", "approx", "")
-	fs.IntVar(&cfg.DedupeMemMB, "dedupe-mem", 512, "")
+	fs.IntVar(&cfg.DedupeMemMB, "dedupe-mem", 0, "")
+	fs.BoolVar(&cfg.NoMemCap, "no-mem-cap", false, "")
 	fs.BoolVar(&cfg.Verbose, "v", false, "")
 
 	fs.Usage = func() {
@@ -97,14 +99,17 @@ Options:
   -dedupe <mode>    Duplicate removal: approx (default), fingerprint, full
                     approx is memory-capped but drops a few unique candidates
                     as false dupes; the other two drop none
-  -dedupe-mem <MB>  Memory cap for -dedupe approx (default: 512)
+  -dedupe-mem <MB>  Memory ceiling for the dedupe structure. Unset, it is 75%% of
+                    the memory free at the time; approx sizes its filter to this
+                    (512 MB when unset and there is room)
+  -no-mem-cap       Dedupe without a memory ceiling
 `, runtime.NumCPU())
 	}
 
 	valueFlags := map[string]bool{
 		"-o": true, "-t": true, "-preset": true,
 		"-min-length": true, "-max": true, "-leet-max": true,
-		"-config": true, "-dedupe": true, "-dedupe-mem": true,
+		"-config": true, "-dedupe": true, "-dedupe-mem": true, "-no-mem-cap": true,
 	}
 	var flagArgs []string
 	var positional []string
